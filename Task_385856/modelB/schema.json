@@ -1,0 +1,13 @@
+{
+    "type": "object",
+    "properties": {
+        "message": {
+            "type": "string"
+        },
+        "timestamp": {
+            "type": "integer",
+            "format": "unix"
+        }
+    },
+    "required": ["message", "timestamp"]
+}
