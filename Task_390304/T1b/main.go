@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -18,7 +20,8 @@ type Incident struct {
 
 // LogIncident logs an incident to file
 func LogIncident(incident Incident) {
-	file, err := os.OpenFile("incidents.log", os.O_APPEND|os.O_WRONLY, 0644)
+	// Open file with append and create flags
+	file, err := os.OpenFile("incidents.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalf("Error opening file: %v", err)
 	}
@@ -33,33 +36,36 @@ func LogIncident(incident Incident) {
 }
 
 // RetainAndDeleteIncidents rotates the log file based on retention policy
-func RetainAndDeleteIncidents(retentionTime time.Duration) {
+func RetainAndDeleteIncidents(retentionTime time.Duration, stopChan <-chan struct{}) {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(24 * time.Hour) // Check every 24 hours
-
-		files, err := os.ReadDir(".")
-		if err != nil {
-			log.Printf("Error reading directory: %v", err)
-			continue
-		}
-
-		for _, file := range files {
-			if file.Info().IsDir() {
+		select {
+		case <-ticker.C:
+			// Check log files for retention
+			fileInfo, err := os.Stat("incidents.log")
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue // Log file doesn't exist, skip
+				}
+				log.Printf("Error stating file: %v", err)
 				continue
 			}
 
-			if file.Name() != "incidents.log" {
-				continue
-			}
-
-			fileAge := time.Now().Sub(file.Info().ModTime())
+			fileAge := time.Since(fileInfo.ModTime())
 			if fileAge > retentionTime {
-				if err := os.Remove(file.Name()); err != nil {
-					log.Printf("Error deleting file %s: %v", file.Name(), err)
+				if err := os.Remove("incidents.log"); err != nil {
+					log.Printf("Error deleting file incidents.log: %v", err)
 				} else {
-					log.Printf("Deleted file %s, age: %v", file.Name(), fileAge)
+					log.Printf("Deleted log file incidents.log, age: %v", fileAge)
 				}
 			}
+
+		case <-stopChan:
+			// Graceful shutdown
+			log.Println("Stopping log retention handler...")
+			return
 		}
 	}
 }
@@ -77,8 +83,15 @@ func main() {
 	}
 	LogIncident(incident)
 
-	// Start a goroutine to handle log retention
-	go RetainAndDeleteIncidents(retentionPolicy)
+	// Set up channel to handle shutdown
+	stopChan := make(chan struct{})
+	go RetainAndDeleteIncidents(retentionPolicy, stopChan)
 
-	select {} // Block the main thread to keep the application running
+	// Handle OS signals for graceful shutdown
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-signalChan // Wait for termination signal
+	close(stopChan)
+	log.Println("Application shutting down gracefully.")
 }
