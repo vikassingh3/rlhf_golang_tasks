@@ -1,0 +1,3 @@
+{"id":"001","message":"User login failed: invalid credentials","occurred_at":"2024-12-14T20:58:58.080197+05:30"}
+{"id":"002","message":"Data accessed without permission","occurred_at":"2024-12-14T20:58:58.085999+05:30"}
+{"id":"003","message":"System error encountered","occurred_at":"2024-12-14T20:58:58.086555+05:30"}
