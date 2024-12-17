@@ -1,0 +1,44 @@
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                docker.build image: 'golang-app:latest', dir: '.'
+            }
+        }
+        stage('Test') {
+            steps {
+                docker.withServer('unix:///var/run/docker.sock', 'docker') {
+                    docker.image('golang-app:latest').inside {
+                        sh 'go test -v'
+                    }
+                }
+            }
+        }
+        stage('Scan') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'sonarqube-credentials', usernameVariable: 'SONARQUBE_USERNAME', passwordVariable: 'SONARQUBE_PASSWORD')]) {
+                    sh 'sonar-scanner -Dsonar.projectKey=golang-app -Dsonar.projectName=Golang App -Dsonar.login=${SONARQUBE_USERNAME} -Dsonar.password=${SONARQUBE_PASSWORD}'
+                }
+            }
+        }
+        stage('Package') {
+            steps {
+                docker.build image: 'golang-app:${env.BUILD_NUMBER}', dir: '.'
+                docker.push image: 'golang-app:${env.BUILD_NUMBER}'
+            }
+        }
+        stage('Deploy') {
+            when {
+                branch 'master'
+            }
+            steps {
+                script {
+                    def docker = docker.build('golang-app:latest', '.')
+                    docker.push()
+                    sh 'docker run -d --name golang-app golang-app:latest'
+                }
+            }
+        }
+    }
+}
