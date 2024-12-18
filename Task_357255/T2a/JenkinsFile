@@ -1,0 +1,25 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    sh 'go build -o main .'
+                }
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'go test ./...'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                withCredentials([string(credentialsId: 'HEROKU_API_KEY', variable: 'HEROKU_API_KEY')]) {
+                    sh "./scripts/deploy.sh --api-key $HEROKU_API_KEY"
+                }
+            }
+        }
+    }
+}

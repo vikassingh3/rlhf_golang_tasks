@@ -1,0 +1,22 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Deploy to Heroku
+      uses: actions/deploy/heroku@v2
+      with:
+        api-key: ${{ secrets.HEROKU_API_KEY }}
+        app: your-app-name
+        local-file: main
+        branch: main
