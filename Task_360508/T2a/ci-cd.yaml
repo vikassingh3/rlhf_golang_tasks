@@ -1,0 +1,83 @@
+name: Go CI/CD Pipeline with Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go 1.20
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Build Go application
+      run: |
+        go mod tidy
+        go mod verify
+        go build -o ./.build/app .
+
+    - name: Build Docker image
+      run: |
+        docker build -t my-go-app:latest .
+
+    - name: Push Docker image
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Push to Docker Hub
+        run: docker push my-go-app:latest
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go 1.20
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Install dependencies
+      run: go mod tidy
+
+    - name: Run tests
+      run: go test ./... -v
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up kubectl
+      uses: kubernetes-action/setup-kubectl@v2
+      with:
+        kubectl-version: '1.26.0'
+
+    - name: Login to Kubernetes
+      uses: kubernetes-action/authenticate-k8s@v1
+      with:
+        cluster-name: 'your-cluster-name'
+        context-name: 'your-context-name'
+        username: ${{ secrets.K8S_USERNAME }}
+        token: ${{ secrets.K8S_TOKEN }}
+
+    - name: Apply Kubernetes manifest
+      run: kubectl apply -f kubernetes/deployment.yaml
