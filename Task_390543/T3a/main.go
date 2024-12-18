@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -101,7 +100,7 @@ func run(url string) {
 			}
 		}
 
-connectLoop:
+	connectLoop:
 	}
 }
 

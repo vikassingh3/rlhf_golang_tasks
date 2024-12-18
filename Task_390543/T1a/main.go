@@ -30,7 +30,7 @@ func measureLatency() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
-	conn, _, err := upgrader.Upgrade(context.WithCancel(ctx), &http.Request{URL: &http.URL{Scheme: "ws", Host: "localhost:8080", Path: "/ws"}}, nil)
+	conn, err := upgrader.Upgrade(context.WithCancel(ctx), &http.Request{URL: &http.URL{Scheme: "ws", Host: "localhost:8080", Path: "/ws"}}, nil)
 	if err != nil {
 		log.Fatalf("Failed to connect to WebSocket: %v", err)
 	}
@@ -42,7 +42,7 @@ func measureLatency() {
 	}
 
 	var pingMessage []byte
-	if _, pingMessage, err := conn.ReadMessage(); err != nil {
+	if _, _, err := conn.ReadMessage(); err != nil {
 		log.Fatalf("Failed to receive pong message: %v", err)
 	}
 
@@ -57,8 +57,8 @@ func measureLatency() {
 		log.Fatalf("Failed to send measure-latency message: %v", err)
 	}
 
-	var latencyMessage []byte
-	if _, latencyMessage, err := conn.ReadMessage(); err != nil {
+	// var latencyMessage []byte
+	if _, _, err := conn.ReadMessage(); err != nil {
 		log.Fatalf("Failed to receive latency message: %v", err)
 	}
 
