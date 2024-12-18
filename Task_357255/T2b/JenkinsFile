@@ -1,0 +1,18 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Deploy') {
+            steps {
+                script {
+                    withEnv([
+                        'DATABASE_URL=${env.DATABASE_URL}',
+                        'API_KEY=${env.API_KEY}'
+                    ]) {
+                        sh 'echo "Deploying with DATABASE_URL: $DATABASE_URL and API_KEY: $API_KEY"'
+                    }
+                }
+            }
+        }
+    }
+}
