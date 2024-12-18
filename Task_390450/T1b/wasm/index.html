@@ -1,0 +1,32 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebAssembly with JWT</title>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/wasm_exec@1.1.0/wasm_exec.js"></script>
+    <script>
+        WebAssembly.instantiateStreaming(fetch("main.wasm"), importObject)
+            .then(result => {
+                const module = result.instance;
+                const exports = module.exports;
+
+                // Call the WebAssembly functions here
+                // For example, to call the Login function:
+                const username = "user";
+                const password = "password";
+                const loginRequest = exports.protobuf.LoginRequest.create({ username, password });
+                const loginResponse = exports.protobuf.LoginResponse.decode(exports.Login(loginRequest));
+                const token = loginResponse.token;
+                const user = loginResponse.user;
+
+                console.log("Token:", token);
+                console.log("User:", user);
+            })
+            .catch(error => {
+                console.error("Error instantiating WebAssembly:", error);
+            });
+    </script>
+</body>
+</html>
