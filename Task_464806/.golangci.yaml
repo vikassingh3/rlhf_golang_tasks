@@ -1,0 +1,7 @@
+linters:
+  - deadcode
+  - errcheck
+  - gocritic
+  - goconst
+  - staticcheck
+  - linttest
