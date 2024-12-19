@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 )
 
@@ -10,13 +8,13 @@ const MTU = 1500
 
 // Segment structure representing a TCP segment
 type Segment struct {
-	data []byte
+	data   []byte
 	offset uint16
 }
 
 // Segments structure for handling multiple segments
 type Segments struct {
-	segments []Segment
+	segments   []Segment
 	lastOffset uint16
 }
 
@@ -61,7 +59,7 @@ func ReassembleSegments(segments []Segment) []byte {
 		} else {
 			for i, s := range segmentBuffer.segments {
 				if s.offset > segment.offset {
-					segmentBuffer.segments = append(segmentBuffer.segments[:i], segment, segmentBuffer.segments[i:]...)
+					segmentBuffer.segments = append(segmentBuffer.segments[:i], segmentBuffer.segments[i:]...)
 					segmentBuffer.lastOffset = segment.offset + uint16(len(segment.data))
 					break
 				}

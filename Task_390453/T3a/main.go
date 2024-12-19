@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -19,45 +18,42 @@ func main() {
 	host := os.Args[1]
 	port := os.Args[2]
 
-	// Set send and receive buffer sizes
+	// Establish a TCP connection
 	conn, err := net.Dial("tcp", host+":"+port)
 	if err != nil {
 		fmt.Println("Failed to dial:", err)
 		return
 	}
-
-	// Set TCP send buffer size
 	defer conn.Close()
 
+	// Configure buffer sizes using environment variables
 	sendBufSize, err := strconv.Atoi(os.Getenv("TCP_SNDBUF"))
-	if err != nil {
+	if err != nil || sendBufSize <= 0 {
 		sendBufSize = 65536
 	}
-	if err := conn.SetSockoptInt("tcp", syscall.SO_SNDBUF, sendBufSize); err != nil {
-		fmt.Println("Failed to set send buffer size:", err)
-	}
-
-	// Set TCP receive buffer size
 	recvBufSize, err := strconv.Atoi(os.Getenv("TCP_RCVBUF"))
-	if err != nil {
+	if err != nil || recvBufSize <= 0 {
 		recvBufSize = 65536
 	}
-	if err := conn.SetSockoptInt("tcp", syscall.SO_RCVBUF, recvBufSize); err != nil {
-		fmt.Println("Failed to set receive buffer size:", err)
-	}
 
-	// Set TCP keep-alive
-	keepAliveInterval := 5 * time.Second // Interval after which the keep-alive messages start
-	keepAliveCount := 5                 // Number of keep-alive messages to send
+	// Display the configured buffer sizes (unable to set directly in Go's net.Conn)
+	fmt.Printf("Using send buffer size: %d bytes\n", sendBufSize)
+	fmt.Printf("Using receive buffer size: %d bytes\n", recvBufSize)
 
-	if err := conn.SetKeepAlive(true); err != nil {
-		fmt.Println("Failed to set keep-alive:", err)
-	}
-	if err := conn.SetKeepAlivePeriod(keepAliveInterval); err != nil {
-		fmt.Println("Failed to set keep-alive interval:", err)
-	}
-	if err := conn.SetKeepAliveCount(keepAliveCount); err != nil {
-		fmt.Println("Failed to set keep-alive count:", err)
+	// Implement keep-alive using TCPConn methods
+	tcpConn, ok := conn.(*net.TCPConn)
+	if ok {
+		err = tcpConn.SetKeepAlive(true)
+		if err != nil {
+			fmt.Println("Failed to enable keep-alive:", err)
+		}
+
+		err = tcpConn.SetKeepAlivePeriod(5 * time.Second)
+		if err != nil {
+			fmt.Println("Failed to set keep-alive period:", err)
+		}
+	} else {
+		fmt.Println("Failed to assert connection as TCPConn")
 	}
 
 	// Example data transmission

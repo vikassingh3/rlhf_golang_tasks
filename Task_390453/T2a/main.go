@@ -1,12 +1,12 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
-	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -19,21 +19,36 @@ func main() {
 	host := os.Args[1]
 	port := os.Args[2]
 
-	// Set send and receive buffer sizes
+	// Dial a TCP connection
 	conn, err := net.Dial("tcp", host+":"+port)
 	if err != nil {
 		fmt.Println("Failed to dial:", err)
 		return
 	}
-
-	// Set TCP send buffer size
 	defer conn.Close()
 
+	// Get the file descriptor for the connection
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		fmt.Println("Failed to get TCP connection")
+		return
+	}
+
+	file, err := tcpConn.File()
+	if err != nil {
+		fmt.Println("Failed to get file descriptor:", err)
+		return
+	}
+	defer file.Close()
+
+	fd := int(file.Fd())
+
+	// Set TCP send buffer size
 	sendBufSize, err := strconv.Atoi(os.Getenv("TCP_SNDBUF"))
 	if err != nil {
 		sendBufSize = 65536
 	}
-	if err := conn.SetSockoptInt("tcp", syscall.SO_SNDBUF, sendBufSize); err != nil {
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, sendBufSize); err != nil {
 		fmt.Println("Failed to set send buffer size:", err)
 	}
 
@@ -42,22 +57,26 @@ func main() {
 	if err != nil {
 		recvBufSize = 65536
 	}
-	if err := conn.SetSockoptInt("tcp", syscall.SO_RCVBUF, recvBufSize); err != nil {
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, recvBufSize); err != nil {
 		fmt.Println("Failed to set receive buffer size:", err)
 	}
 
-	// Set TCP keep-alive
-	keepAliveInterval := 5 * time.Second // Interval after which the keep-alive messages start
-	keepAliveCount := 5                 // Number of keep-alive messages to send
-
-	if err := conn.SetKeepAlive(true); err != nil {
-		fmt.Println("Failed to set keep-alive:", err)
+	// Enable TCP keep-alive
+	keepAlive := 1
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_KEEPALIVE, keepAlive); err != nil {
+		fmt.Println("Failed to enable keep-alive:", err)
 	}
-	if err := conn.SetKeepAlivePeriod(keepAliveInterval); err != nil {
+
+	// Set keep-alive interval (TCP_KEEPINTVL)
+	keepAliveInterval := 5 // in seconds
+	if err := unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_KEEPINTVL, keepAliveInterval); err != nil {
 		fmt.Println("Failed to set keep-alive interval:", err)
 	}
-	if err := conn.SetKeepAliveCount(keepAliveCount); err != nil {
-		fmt.Println("Failed to set keep-alive count:", err)
+
+	// Set keep-alive probes (TCP_KEEPCNT)
+	keepAliveCount := 5
+	if err := unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_KEEPCNT, keepAliveCount); err != nil {
+		fmt.Println("Failed to set keep-alive probes:", err)
 	}
 
 	// Example data transmission
