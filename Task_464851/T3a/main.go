@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -12,21 +11,16 @@ import (
 )
 
 const (
-	uploadsDir       = "uploads"
-	downloadsDir     = "downloads"
-	maxFileSize      = 1024 * 1024 * 10                       // 10MB limit
-	allowedFileTypes = "image/jpeg,image/png,application/pdf" // Allow JPEG, PNG, and PDF
+	uploadsDir = "uploads"
+	downloadsDir = "downloads"
+	maxFileSize = 1024 * 1024 * 10 // 10MB limit
+	allowedMIMETypes = "image/jpeg,image/png,application/pdf" // Allow JPEG, PNG, and PDF
 )
 
 // FileHandler is a struct to handle file-related operations
 type FileHandler struct {
-	uploadsDir   string
+	uploadsDir string
 	downloadsDir string
-}
-
-// ErrorResponse is a struct to send JSON error responses
-type ErrorResponse struct {
-	Error string `json:"error"`
 }
 
 // NewFileHandler creates a new FileHandler
@@ -34,7 +28,7 @@ func NewFileHandler(uploadsDir, downloadsDir string) *FileHandler {
 	return &FileHandler{uploadsDir, downloadsDir}
 }
 
-// UploadHandler handles file uploads with validation and JSON responses
+// UploadHandler handles file uploads with MIME type validation
 func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Ensure the uploads directory exists
 	os.MkdirAll(fh.uploadsDir, 0755)
@@ -52,35 +46,9 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Check file size
-	seeker, ok := file.(io.Seeker)
-	if !ok {
-		http.Error(w, "Unable to determine file size", http.StatusInternalServerError)
-		return
-	}
-
-	// Seek to the end to determine file size
-	fileSize, err := seeker.Seek(0, io.SeekEnd)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Reset the file pointer to the beginning
-	_, err = seeker.Seek(0, io.SeekStart)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if fileSize > maxFileSize {
-		http.Error(w, "File size exceeds limit", http.StatusBadRequest)
-		return
-	}
-
-	// Check file type
-	fileType := handler.Header["Content-Type"][0]
-	if !strings.Contains(allowedFileTypes, fileType) {
+	// Check MIME type
+	mimeType := handler.Header["Content-Type"][0]
+	if !strings.Contains(allowedMIMETypes, mimeType) {
 		http.Error(w, "Unsupported file type", http.StatusBadRequest)
 		return
 	}
@@ -113,19 +81,12 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 	filePath := path.Join(fh.downloadsDir, fileName)
 	file, err := os.Open(filePath)
 	if err != nil {
-		fh.sendErrorResponse(w, err.Error())
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	defer file.Close()
 
 	http.ServeFile(w, r, filePath)
-}
-
-// sendErrorResponse sends an error message as JSON
-func (fh *FileHandler) sendErrorResponse(w http.ResponseWriter, errorMessage string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: errorMessage})
 }
 
 func main() {

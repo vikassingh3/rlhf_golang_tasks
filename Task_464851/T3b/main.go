@@ -1,143 +1,75 @@
 package main
 
 import (
-	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
-
-	"github.com/gorilla/mux"
 )
-
-type errorResponse struct {
-	Error string `json:"error"`
-}
 
 const (
-	uploadsDir       = "uploads"
-	downloadsDir     = "downloads"
-	maxFileSize      = 1024 * 1024 * 10                       // 10MB limit
-	allowedFileTypes = "image/jpeg,image/png,application/pdf" // Allow JPEG, PNG, and PDF
+	uploadDir        = "uploads"
+	maxFileSize      = 1024 * 1024 * 10 // 10MB limit
+	allowedFileTypes = "image/jpeg,image/png,application/pdf"
 )
 
-// FileHandler is a struct to handle file-related operations
-type FileHandler struct {
-	uploadsDir   string
-	downloadsDir string
+func main() {
+	http.HandleFunc("/upload", uploadHandler)
+	fmt.Println("Server listening on port :8080")
+	http.ListenAndServe(":8080", nil)
 }
 
-// NewFileHandler creates a new FileHandler
-func NewFileHandler(uploadsDir, downloadsDir string) *FileHandler {
-	return &FileHandler{uploadsDir, downloadsDir}
-}
-
-// UploadHandler handles file uploads with validation
-func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
-	// Ensure the uploads directory exists
-	os.MkdirAll(fh.uploadsDir, 0755)
-
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(errorResponse{Error: "Method not allowed"})
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Max memory for form data
-	err := r.ParseMultipartForm(1024 * 1024 * 10)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errorResponse{Error: "Failed to parse form data"})
+	// Parse the multipart form data
+	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Get the file from the form
 	file, handler, err := r.FormFile("file")
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: err.Error()})
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	// Check file size using io.Seeker to calculate the size
-	seeker, ok := file.(io.Seeker)
-	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: "Unable to determine file size"})
-		return
-	}
-
-	// Seek to the end to determine file size
-	fileSize, err := seeker.Seek(0, io.SeekEnd)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: err.Error()})
-		return
-	}
-
-	// Reset the file pointer to the beginning
-	_, err = seeker.Seek(0, io.SeekStart)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: err.Error()})
-		return
-	}
-
-	// Check if file size exceeds the limit
-	if fileSize > maxFileSize {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errorResponse{Error: "File size exceeds limit"})
-		return
-	}
-
-	// Check file type
-	fileType := handler.Header["Content-Type"][0]
+	// Validate file type
+	fileType := handler.Header.Get("Content-Type")
 	if !strings.Contains(allowedFileTypes, fileType) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errorResponse{Error: "Unsupported file type"})
+		http.Error(w, "Unsupported file type", http.StatusBadRequest)
 		return
 	}
 
-	// Proceed with file saving logic (existing code)
-	fileName := path.Clean(handler.Filename)
-	filePath := path.Join(fh.uploadsDir, fileName)
+	// Create the upload directory if it doesn't exist
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	dest, err := os.Create(filePath)
+	// Generate a new file path with the original file name
+	filePath := filepath.Join(uploadDir, handler.Filename)
+
+	// Create a new file on the server
+	f, err := os.Create(filePath)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer dest.Close()
+	defer f.Close()
 
-	_, err = io.Copy(dest, file)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse{Error: err.Error()})
+	// Copy the file content to the server
+	if _, err := io.Copy(f, file); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "File uploaded successfully!\n")
-}
-
-func main() {
-	r := mux.NewRouter()
-	fh := NewFileHandler(uploadsDir, downloadsDir)
-
-	r.HandleFunc("/upload", fh.UploadHandler).Methods(http.MethodPost)
-	// r.HandleFunc("/download/{filename}", fh.DownloadHandler).Methods(http.MethodGet)
-
-	http.ListenAndServe(":8080", r)
+	fmt.Fprintf(w, "File uploaded successfully: %s\n", handler.Filename)
 }
