@@ -2,12 +2,12 @@ package plugins
 
 import (
 	"fmt"
-	"pugin/pluginmanager"
+	"pugin/manager"
 )
 
 func main() {
-	pm := pluginmanager.NewPluginManager()
-	pluginPath := "./plugins/uppercase/uppercase.so" // Replace with your platform-specific plugin extension
+	pm := manager.NewPluginManager()
+	pluginPath := "./plugin/uppercase/uppercase.so" // Replace with your platform-specific plugin extension
 	pm.Load(pluginPath)
 
 	data := "hello, plugin system!"

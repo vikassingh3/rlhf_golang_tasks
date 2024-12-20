@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"pugin/pluginmanager"
+	"pugin/manager"
 )
 
 func main() {
-	pm := pluginmanager.NewPluginManager()
-	pluginPath := "./plugins/uppercase/uppercase.so" // Path to your compiled plugin
+	pm := manager.NewPluginManager()
+	pluginPath := "./plugin/upercase/uper.so" // Path to your compiled plugin
 	pm.Load(pluginPath)
 
 	data := "hello, plugin system!"

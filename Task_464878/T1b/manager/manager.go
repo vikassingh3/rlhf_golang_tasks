@@ -1,10 +1,10 @@
-package pluginmanager
+package manager
 
 import (
 	"log"
 	"plugin"
 
-	"pugin/plugins"
+	"pugin/plugin"
 )
 
 type PluginManager struct {
