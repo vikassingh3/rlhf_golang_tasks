@@ -2,32 +2,22 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 )
 
 // Function to make an API call
 func makeAPICall(url string, wg *sync.WaitGroup) {
-	defer wg.Done() // Decrement the WaitGroup counter
+	defer wg.Done() // Decrement the WaitGroup counter when done
 
-	// Simulate API request
+	// Simulate an API call with a delay
 	fmt.Println("Making request to", url)
-
-	// You would normally make an HTTP request here
-	// For demonstration, we will sleep for a random time
-	select {
-	case <-time.After(time.Duration(rand.Intn(2000)) * time.Millisecond):
-		fmt.Println("Request to", url, "completed")
-	default:
-	}
+	time.Sleep(2 * time.Second) // Simulate network delay
+	fmt.Println("Request to", url, "completed")
 }
 
 func main() {
-	// Initialize a WaitGroup
-	var wg sync.WaitGroup
-
-	// Define some URLs for API requests
+	// List of URLs to simulate API requests
 	urls := []string{
 		"https://api.example.com/data1",
 		"https://api.example.com/data2",
@@ -36,14 +26,16 @@ func main() {
 		"https://api.example.com/data5",
 	}
 
-	// Create a goroutine for each URL
+	// Initialize a WaitGroup
+	var wg sync.WaitGroup
+
+	// Create goroutines for each API call
 	for _, url := range urls {
-		wg.Add(1) // Increment the WaitGroup counter
+		wg.Add(1) // Increment the counter
 		go makeAPICall(url, &wg)
 	}
 
-	// Wait for all goroutines to complete
+	// Wait for all API calls to complete
 	wg.Wait()
-
 	fmt.Println("All API requests completed.")
 }
