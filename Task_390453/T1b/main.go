@@ -1,7 +1,8 @@
-package main  
-import (  
-    "fmt"
-    "net"
+package main
+
+import (
+	"fmt"
+	"net"
 )
 
 // Define the maximum TCP packet size
@@ -15,7 +16,7 @@ func main() {
         return
     }  
     defer listener.Close()
-
+    fmt.Println("Started on :8080")
     for {  
         // Accept incoming connections
         conn, err := listener.Accept()
