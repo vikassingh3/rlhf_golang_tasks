@@ -1,19 +1,18 @@
-
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "net/http"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"time"
 
-    "github.com/golang-jwt/jwt"
-    "github.com/golang/protobuf/ptypes/empty"
-    "github.com/golang/protobuf/ptypes/timestamp"
-    "google.golang.org/grpc"
+	"github.com/golang-jwt/jwt"
+	"github.com/golang/protobuf/ptypes/timestamp"
+	"google.golang.org/grpc"
 
-    "example.com/protobuf"
+	"example.com/protobuf"
 )
 
 const (

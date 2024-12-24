@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"jwt-validation/proto"
+
 	"github.com/golang-jwt/jwt/v4"
 	"google.golang.org/grpc"
-
-	"example.com/protobuf"
 )
 
 const (
@@ -23,10 +23,10 @@ const (
 )
 
 type authService struct {
-	protobuf.UnimplementedAuthServiceServer
+	proto.UnimplementedAuthServiceServer
 }
 
-func (a *authService) ValidateToken(ctx context.Context, req *protobuf.ValidateTokenRequest) (*protobuf.ValidateTokenResponse, error) {
+func (a *authService) ValidateToken(ctx context.Context, req *proto.ValidateTokenRequest) (*proto.ValidateTokenResponse, error) {
 	token, err := jwt.ParseWithClaims(req.Token, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -43,12 +43,12 @@ func (a *authService) ValidateToken(ctx context.Context, req *protobuf.ValidateT
 			return nil, fmt.Errorf("invalid issuer or audience")
 		}
 
-		user := &protobuf.User{
+		user := &proto.User{
 			Id:       claims["id"].(string),
 			Username: claims["username"].(string),
 			Email:    claims["email"].(string),
 		}
-		return &protobuf.ValidateTokenResponse{
+		return &proto.ValidateTokenResponse{
 			User: user,
 		}, nil
 	}
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	s := grpc.NewServer()
-	protobuf.RegisterAuthServiceServer(s, &authService{})
+	proto.RegisterAuthServiceServer(s, &authService{})
 
 	go func() {
 		fmt.Println("gRPC server running on port :50051")
@@ -100,12 +100,12 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func validateToken(token string) (*protobuf.ValidateTokenResponse, error) {
-	service := protobuf.NewAuthServiceClient(&grpc.DialOptions{
+func validateToken(token string) (*proto.ValidateTokenResponse, error) {
+	service := proto.NewAuthServiceClient(&grpc.DialOptions{
 		Insecure: true, // Replace with secure credentials in production
 	})
 
-	req := &protobuf.ValidateTokenRequest{
+	req := &proto.ValidateTokenRequest{
 		Token: token,
 	}
 
