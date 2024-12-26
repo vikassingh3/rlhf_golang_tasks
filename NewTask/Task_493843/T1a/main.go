@@ -1,40 +1,84 @@
 package main
 
-import "fmt"
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "regexp"
+)
 
-
-func main(){
-s := []int{1, 2, 3}
-for i, _ := range s {
-    fmt.Println(i, s[i]) // Print indices to check out-of-range access
-    s = append(s, 4)     // Modifying slice while iterating can cause issues
+// Define a simple structure to hold query parameters
+type QueryParameters struct {
+    UserID string `json:"userID"`
+    Email  string `json:"email"`
 }
 
+// A regular expression to validate an email
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
-// s := []int{1, 2, 3, 4, 5}
-// for _, v := range s {
-//     if v > 3 {
-//         break
-//     }
-//     fmt.Println(v)
-// }
+// Handler function to process incoming HTTP requests
+func parameterHandler(w http.ResponseWriter, r *http.Request) {
+    // Parse query parameters from the URL
+    queryParams := r.URL.Query()
 
+    var params QueryParameters
+    for key, value := range queryParams {
+        // Validate each parameter
+        switch key {
+        case "userID":
+            // Example validation: UserID should be a non-empty string of digits
+            if len(value) == 0 || !allDigits(value[0]) {
+                logInvalidParameter(key, value[0]) // Pass the first element of the slice
+                params.UserID = ""
+            } else {
+                params.UserID = value[0]
+            }
+        case "email":
+            // Validate: Email should match the email regex pattern
+            if !emailRegex.MatchString(value[0]) {
+                logInvalidParameter(key, value[0]) // Pass the first element of the slice
+                params.Email = ""
+            } else {
+                params.Email = value[0]
+            }
+        }
+    }
 
-// s := []int{1, 2, 3}
-// for i, _ := range s {
-//     if s[i] == 2 {
-//         delete(s, i) // Deleting while iterating is not allowed
-//     }
-// }
+    // Convert the validated parameters back to JSON for response
+    jsonResponse, err := json.Marshal(params)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 
+    // Send the response
+    w.Header().Set("Content-Type", "application/json")
+    w.Write(jsonResponse)
+}
 
-// var count int
-// for _, v1 := range s1 {
-//     for _, v2 := range s2 {
-//         if v1 == v2 {
-//             count++
-//         }
-//     }
-// }
-// fmt.Println("Count:", count)
+// Function to log invalid parameters
+func logInvalidParameter(key, value string) {
+    fmt.Printf("Invalid Parameter: %s=%v\n", key, value)
+}
+
+// Check if all characters are digits
+func allDigits(str string) bool {
+    for _, char := range str {
+        if char < '0' || char > '9' {
+            return false
+        }
+    }
+    return true
+}
+
+// Main function to start the server
+func main() {
+	// Define the route for the handler function
+	http.HandleFunc("/api/parameters", parameterHandler)
+
+	// Start the HTTP server
+	fmt.Println("Server running on http://localhost:8080/api/parameters")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		fmt.Println("Error starting server:", err)
+	}
 }

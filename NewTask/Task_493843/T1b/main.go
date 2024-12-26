@@ -1,64 +1,67 @@
 package main
 
+
 import (
-	"fmt"
-	"sync"
+    "fmt"
+    "net/url"
 )
 
-// func main() {
-//     slice := []int{1, 2, 3}
-//     for _, val := range slice {
-//         slice = append(slice, val+10) // Race condition!
-//         fmt.Println(val)
-//     }
-// }
-
-// func main() {
-//     mapA := map[string]int{"a": 1, "b": 2}
-//     for key, _ := range mapA {
-//         mapA["c"] = 3 // Race condition!
-//         fmt.Println(key)
-//     }
-// }
-
-// func main() {
-//     array := [3]int{1, 2, 3}
-//     slice := array[:]
-
-//     for index, value := range array {
-//         fmt.Printf("array[%d]: %d\n", index, value)
-//     }
-
-//     fmt.Println()
-//     for index, value := range slice {
-//         fmt.Printf("slice[%d]: %d\n", index, value)
-//     }
-// }
-
-
-
-
-
-func main() {
-	var wg sync.WaitGroup
-	mapA := make(map[int]int)
-	var mu sync.Mutex // Mutex to prevent data races
-
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			mu.Lock()          // Lock before accessing the map
-			mapA[i] = i        // Safely write to the map
-			mu.Unlock()        // Unlock after modifying the map
-		}(i) // Pass `i` as a parameter to avoid closure issues
-	}
-
-	wg.Wait()
-	mu.Lock() // Lock to safely read the map
-	for key, val := range mapA {
-		fmt.Printf("%d: %d\n", key, val)
-	}
-	mu.Unlock()
+// InvalidParam represents a single invalid query parameter.
+type InvalidParam struct {
+    ParamName  string
+    ParamValue string
+    Error      error
 }
 
+func validateQueryParams(urlStr string) []InvalidParam {
+    var invalidParams []InvalidParam
+
+    // Parse the URL
+    u, err := url.Parse(urlStr)
+    if err != nil {
+        invalidParams = append(invalidParams, InvalidParam{
+            ParamName:  "URL",
+            ParamValue: urlStr,
+            Error:      err,
+        })
+        return invalidParams
+    }
+
+    // Validate each query parameter
+    for key, values := range u.Query() {
+        for _, value := range values {
+            // Add your custom validation logic here
+            // For example, checking for empty values or invalid characters.
+            if value == "" {
+                invalidParams = append(invalidParams, InvalidParam{
+                    ParamName:  key,
+                    ParamValue: value,
+                    Error:      fmt.Errorf("value is empty"),
+                })
+            }
+        }
+    }
+    return invalidParams
+}
+
+func main() {
+    // Example URLs with invalid query parameters
+    urlStrings := []string{
+        "https://example.com?param1=value1&param2=", // Empty value for param2
+        "https://example.com?param3=invalid@char",  // Invalid character in value
+        "https://example.com?param4",                // Missing value for param4
+        "invalid_url",                              // Invalid URL
+    }
+
+    for _, urlStr := range urlStrings {
+        invalidParams := validateQueryParams(urlStr)
+        if len(invalidParams) > 0 {
+            fmt.Println("Invalid parameters found in URL:", urlStr)
+            for _, param := range invalidParams {
+                fmt.Printf("  - %s: %s - %v\n", param.ParamName, param.ParamValue, param.Error)
+            }
+        } else {
+            fmt.Println("All parameters are valid in URL:", urlStr)
+        }
+    }
+}  
