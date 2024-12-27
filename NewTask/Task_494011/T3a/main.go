@@ -1,12 +1,26 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// Constants for transaction states
+const (
+	Pending   = 0
+	Committed = 1
+	Aborted   = 2
+)
+
+// Transaction represents a single transaction
+type Transaction struct {
+	id        int64
+	key       string
+	value     string
+	timestamp time.Time
+}
 
 // Partition represents a single partition with its own lock and data map.
 type Partition struct {
@@ -20,11 +34,11 @@ type Partition struct {
 	transactionState map[int64]int32 // 0: Pending, 1: Committed, 2: Aborted
 }
 
-type Transaction struct {
-	id      int64
-	key     string
-	value   string
-	timestamp time.Time
+// PartitionedMap manages multiple partitions with support for transactions.
+type PartitionedMap struct {
+	partitions    []*Partition
+	numPartitions int
+	transactionID int64 // Atomic counter for transaction IDs
 }
 
 // NewPartitionedMap initializes a PartitionedMap with the specified number of partitions.
@@ -48,6 +62,7 @@ func NewPartitionedMap(numPartitions int) *PartitionedMap {
 	return pm
 }
 
+// nextTransactionID generates a unique transaction ID.
 func (pm *PartitionedMap) nextTransactionID() int64 {
 	return atomic.AddInt64(&pm.transactionID, 1)
 }
@@ -55,7 +70,6 @@ func (pm *PartitionedMap) nextTransactionID() int64 {
 // getPartitionIndex determines which partition a key belongs to.
 func (pm *PartitionedMap) getPartitionIndex(key string) int {
 	// Hash the key to determine the partition index
-	// (Simple hashing function for demonstration purposes)
 	return int(key[0]) % len(pm.partitions)
 }
 
@@ -80,9 +94,9 @@ func (pm *PartitionedMap) Set(txID int64, key, value string) {
 	partition.transactionState[txID] = Pending
 	partition.data[key] = value
 	partition.transactionLog = append(partition.transactionLog, &Transaction{
-		id:      txID,
-		key:     key,
-		value:   value,
+		id:        txID,
+		key:       key,
+		value:     value,
 		timestamp: time.Now(),
 	})
 }
