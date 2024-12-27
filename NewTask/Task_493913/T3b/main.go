@@ -1,149 +1,93 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 )
 
-// Defining some predefined Feedback Types
-const (
-	FeatureRequest FeedbackType = "feature_request"
-	BugReport      FeedbackType = "bug_report"
-	Comment        FeedbackType = "comment"
-	UserSurvey     FeedbackType = "user_survey" // New feedback type added
-)
-
-// FeedbackType represents the type of feedback
-type FeedbackType string
-
-// Feedback is an interface that encapsulates different feedback types
+// Feedback interface defines the contract for all feedback types
 type Feedback interface {
-	GetFeedbackType() FeedbackType
-	GetDetails() interface{}
+	GetFeedbackType() string
+	Display() string
 }
 
-// A generic struct to handle any feedback
-type feedback struct {
-	Type    FeedbackType `json:"type"`
-	Details interface{}  `json:"details"`
+// Registry to dynamically register feedback types
+var feedbackRegistry = make(map[string]reflect.Type)
+
+// RegisterFeedbackType registers a new feedback type dynamically
+func RegisterFeedbackType(typeName string, fbType reflect.Type) {
+	feedbackRegistry[typeName] = fbType
 }
 
-// Implement the Feedback interface
-func (f *feedback) GetFeedbackType() FeedbackType {
-	return f.Type
-}
-
-func (f *feedback) GetDetails() interface{} {
-	return f.Details
-}
-
-// Specific feedback types
-type featureRequest struct {
-	Feature string `json:"feature"`
-	Benefit string `json:"benefit"`
-}
-
-type bugReport struct {
-	Description       string `json:"description"`
-	StepsToReproduce  string `json:"steps_to_reproduce"`
-}
-
-type userSurvey struct {
-	Question1 string `json:"question1"`
-	Question2 string `json:"question2"`
-	Question3 string `json:"question3"`
-}
-
-// RegisterFeedbackTypes function registers new feedback types dynamically
-var feedbackTypeRegistry = map[FeedbackType]reflect.Type{}
-
-func init() {
-	RegisterFeedbackTypes()
-}
-
-func RegisterFeedbackTypes() {
-	feedbackTypeRegistry[FeatureRequest] = reflect.TypeOf(featureRequest{})
-	feedbackTypeRegistry[BugReport] = reflect.TypeOf(bugReport{})
-	feedbackTypeRegistry[UserSurvey] = reflect.TypeOf(userSurvey{})
-}
-
-// CreateFeedback function creates feedback instances dynamically
-func CreateFeedback(feedbackData map[string]interface{}) (Feedback, error) {
-	feedbackTypeStr, ok := feedbackData["type"].(string)
-	if !ok {
-		return nil, errors.New("missing or invalid 'type' field")
-	}
-
-	feedbackType, exists := feedbackTypeRegistry[FeedbackType(feedbackTypeStr)]
+// CreateFeedback dynamically creates a feedback instance
+func CreateFeedback(typeName string, params map[string]interface{}) (Feedback, error) {
+	fbType, exists := feedbackRegistry[typeName]
 	if !exists {
-		return nil, fmt.Errorf("unknown feedback type: %s", feedbackTypeStr)
+		return nil, fmt.Errorf("feedback type '%s' not registered", typeName)
 	}
-
-	// Create a new instance of the feedback type
-	feedbackInstance := reflect.New(feedbackType).Interface()
-
-	// Decode JSON-like map into the instance
-	detailsJSON, err := json.Marshal(feedbackData["details"])
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode details: %v", err)
-	}
-
-	if err := json.Unmarshal(detailsJSON, feedbackInstance); err != nil {
-		return nil, fmt.Errorf("failed to decode details: %v", err)
-	}
-
-	return &feedback{
-		Type:    FeedbackType(feedbackTypeStr),
-		Details: feedbackInstance,
-	}, nil
-}
-
-// Display feedback details
-func displayFeedback(f Feedback) {
-	fmt.Printf("Feedback Type: %v\n", f.GetFeedbackType())
-	fmt.Println("Details:")
-	details, _ := json.MarshalIndent(f.GetDetails(), "  ", "  ")
-	fmt.Println(string(details))
-	fmt.Println("--------")
-}
-
-// Main function
-func main() {
-	// Example feedback data
-	feedbacks := []map[string]interface{}{
-		{
-			"type": FeatureRequest,
-			"details": map[string]interface{}{
-				"feature": "New Search Feature",
-				"benefit": "Faster and more efficient search",
-			},
-		},
-		{
-			"type": BugReport,
-			"details": map[string]interface{}{
-				"description":       "Application crashes when clicking button X",
-				"steps_to_reproduce": "Open the app, click button X",
-			},
-		},
-		{
-			"type": UserSurvey,
-			"details": map[string]interface{}{
-				"question1": "Answer 1",
-				"question2": "Answer 2",
-				"question3": "Answer 3",
-			},
-		},
-	}
-
-	// Process and display each feedback
-	for i, data := range feedbacks {
-		fb, err := CreateFeedback(data)
-		if err != nil {
-			fmt.Printf("Error creating feedback for item %d: %v\n", i+1, err)
-			continue
+	instance := reflect.New(fbType).Interface().(Feedback)
+	val := reflect.ValueOf(instance).Elem()
+	for key, value := range params {
+		field := val.FieldByName(key)
+		if field.IsValid() && field.CanSet() {
+			field.Set(reflect.ValueOf(value))
 		}
-		displayFeedback(fb)
 	}
+	return instance, nil
+}
+
+// Example Feedback Types
+type BugReport struct {
+	Title       string
+	Description string
+}
+
+func (b BugReport) GetFeedbackType() string {
+	return "BugReport"
+}
+
+func (b BugReport) Display() string {
+	return fmt.Sprintf("Bug Report: %s - %s", b.Title, b.Description)
+}
+
+type FeatureRequest struct {
+	Title       string
+	Description string
+}
+
+func (f FeatureRequest) GetFeedbackType() string {
+	return "FeatureRequest"
+}
+
+func (f FeatureRequest) Display() string {
+	return fmt.Sprintf("Feature Request: %s - %s", f.Title, f.Description)
+}
+
+func main() {
+	// Register feedback types
+	RegisterFeedbackType("BugReport", reflect.TypeOf(BugReport{}))
+	RegisterFeedbackType("FeatureRequest", reflect.TypeOf(FeatureRequest{}))
+
+	// Dynamically create feedback instances
+	params := map[string]interface{}{
+		"Title":       "Search Feature",
+		"Description": "Add advanced search capabilities.",
+	}
+	feedback, err := CreateFeedback("FeatureRequest", params)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println(feedback.Display())
+
+	params = map[string]interface{}{
+		"Title":       "App Crash",
+		"Description": "Crash on clicking settings.",
+	}
+	feedback, err = CreateFeedback("BugReport", params)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println(feedback.Display())
 }
