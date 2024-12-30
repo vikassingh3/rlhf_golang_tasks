@@ -33,7 +33,7 @@ func main() {
     query := "INSERT INTO users (name, age) VALUES (?, ?)"
     _, err = db.Exec(query, name, age)
     if err != nil {
-        panic(err)
+        fmt.Println("error", err.Error())
     }
 
     fmt.Printf("User data inserted successfully.\n")

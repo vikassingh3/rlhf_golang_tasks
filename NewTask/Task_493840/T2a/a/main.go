@@ -4,16 +4,23 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-    _ "github.com/lib/pq"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func main() {
 	// Example DB connection
-	db, err := sql.Open("postgres", "user:password@tcp(localhost:3306)/database")
+	dsn := "user:password@tcp(localhost:3306)/database" // Update with your actual database credentials
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
+
+	// Verify the connection
+	if err := db.Ping(); err != nil {
+		panic(fmt.Sprintf("Unable to connect to database: %v", err))
+	}
 
 	// User input
 	var name string
@@ -43,5 +50,10 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("Name: %s, Email: %s\n", userName, userEmail)
+	}
+
+	// Handle no rows returned
+	if rows.Err() != nil {
+		fmt.Println("No users found.")
 	}
 }
