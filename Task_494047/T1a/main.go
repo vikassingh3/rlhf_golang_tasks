@@ -49,10 +49,52 @@ func (pq *PriorityQueue) Pop() interface{} {
 var (
 	pq       PriorityQueue
 	eventMap = make(map[string]*Event)
-	wg       sync.WaitGroup
+	mu       sync.Mutex
+	cond     = sync.NewCond(&sync.Mutex{})
 )
 
+// Scheduler is the centralized function to process events.
+func scheduler() {
+	for {
+		cond.L.Lock()
+		for pq.Len() == 0 {
+			cond.Wait()
+		}
+
+		mu.Lock()
+		nextEvent := heap.Pop(&pq).(*Event)
+		mu.Unlock()
+
+		cond.L.Unlock()
+
+		timeUntilNextRun := time.Until(nextEvent.NextRun)
+		if timeUntilNextRun > 0 {
+			time.Sleep(timeUntilNextRun)
+		}
+
+		// Run the event
+		nextEvent.Run()
+
+		// Reschedule the event
+		nextEvent.NextRun = nextEvent.NextRun.Add(1 * time.Minute)
+
+		mu.Lock()
+		heap.Push(&pq, nextEvent)
+		mu.Unlock()
+
+		cond.Signal() // Signal the scheduler for new events
+	}
+}
+
 func scheduleEvent(id string, desc string, nextRun time.Time, runFunc func()) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, exists := eventMap[id]; exists {
+		fmt.Printf("Event with ID '%s' already exists. Skipping.\n", id)
+		return
+	}
+
 	event := &Event{
 		ID:          id,
 		Description: desc,
@@ -61,24 +103,13 @@ func scheduleEvent(id string, desc string, nextRun time.Time, runFunc func()) {
 	}
 	eventMap[id] = event
 	heap.Push(&pq, event)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			if pq.Len() == 0 {
-				return
-			}
-			nextEvent := heap.Pop(&pq).(*Event)
-			time.Sleep(time.Until(nextEvent.NextRun))
-			nextEvent.Run()
-			nextEvent.NextRun = nextEvent.NextRun.Add(1 * time.Minute) // Reschedule
-			heap.Push(&pq, nextEvent)
-		}
-	}()
+
+	cond.Signal() // Signal the scheduler for new events
 }
 
 func main() {
 	heap.Init(&pq)
+	go scheduler()
 
 	fmt.Println("Starting the event scheduler.")
 
@@ -87,9 +118,9 @@ func main() {
 	}
 
 	// Schedule events
-	scheduleEvent("exampleEvent", "Reminder for important meeting", time.Now().Add(10*time.Second), sendReminder)
-	scheduleEvent("exampleEvent2", "Daily check-in", time.Now().Add(15*time.Second), sendReminder)
+	scheduleEvent("exampleEvent", "Reminder for important meeting", time.Now().Add(1*time.Second), sendReminder)
+	scheduleEvent("exampleEvent2", "Daily check-in", time.Now().Add(2*time.Second), sendReminder)
 
-	// Wait for the goroutines
-	wg.Wait()
+	// Keep the main function running
+	select {}
 }
