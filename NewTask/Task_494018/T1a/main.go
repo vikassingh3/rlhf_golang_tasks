@@ -16,8 +16,8 @@ func processDataSlice(data []DataItem) ([]DataItem, error) {
 	processedData := make([]DataItem, len(data))
 
 	for i, item := range data {
-		// Simulate some processing
-		processedData[i].Value *= 2
+		// Correct processing logic
+		processedData[i].Value = item.Value * 2
 		fmt.Printf("Processing item %d: original=%d, processed=%d\n", i+1, item.Value, processedData[i].Value)
 	}
 
