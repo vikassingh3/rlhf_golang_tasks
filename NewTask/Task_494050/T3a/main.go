@@ -7,15 +7,16 @@ import (
 	"time"
 )
 
-// Message represents a message with urgency and timestamp.
+// Message represents a message with urgency, timestamp, and its index in the heap.
 type Message struct {
 	Urgency   int       // Higher urgency means higher priority.
 	Timestamp time.Time // Timestamp for priority if urgency is the same.
 	Content   string    // Actual message content.
+	index     int       // Index in the heap (for efficient removal).
 }
 
 // MessageHeap implements heap.Interface and holds Messages.
-type MessageHeap []Message
+type MessageHeap []*Message
 
 func (h MessageHeap) Len() int { return len(h) }
 func (h MessageHeap) Less(i, j int) bool {
@@ -25,75 +26,100 @@ func (h MessageHeap) Less(i, j int) bool {
 	}
 	return h[i].Timestamp.Before(h[j].Timestamp)
 }
-func (h MessageHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h MessageHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].index = i
+	h[j].index = j
+}
 
 func (h *MessageHeap) Push(x interface{}) {
-	*h = append(*h, x.(Message))
+	message := x.(*Message)
+	message.index = len(*h)
+	*h = append(*h, message)
 }
 
 func (h *MessageHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
-	x := old[n-1]
+	message := old[n-1]
+	message.index = -1 // For safety
 	*h = old[0 : n-1]
-	return x
+	return message
+}
+
+// PriorityQueue manages messages with a priority queue and supports efficient removal.
+type PriorityQueue struct {
+	mu       sync.Mutex    // Protects heap and lookup
+	messages MessageHeap   // Heap of messages
+	lookup   map[string]*Message // Map content to message for fast removal
+}
+
+// NewPriorityQueue creates a new PriorityQueue.
+func NewPriorityQueue() *PriorityQueue {
+	return &PriorityQueue{
+		messages: make(MessageHeap, 0),
+		lookup:   make(map[string]*Message),
+	}
+}
+
+// AddMessage adds a message to the queue.
+func (pq *PriorityQueue) AddMessage(message *Message) {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	heap.Push(&pq.messages, message)
+	pq.lookup[message.Content] = message
+}
+
+// RemoveMessage removes a message by content and maintains heap order.
+func (pq *PriorityQueue) RemoveMessage(content string) {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+
+	message, exists := pq.lookup[content]
+	if !exists {
+		return
+	}
+	heap.Remove(&pq.messages, message.index)
+	delete(pq.lookup, content)
+}
+
+// PopMessage removes and returns the highest-priority message.
+func (pq *PriorityQueue) PopMessage() *Message {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+
+	if len(pq.messages) == 0 {
+		return nil
+	}
+	message := heap.Pop(&pq.messages).(*Message)
+	delete(pq.lookup, message.Content)
+	return message
+}
+
+// Len returns the number of messages.
+func (pq *PriorityQueue) Len() int {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	return len(pq.messages)
 }
 
 func main() {
-	// Create a priority queue and initialize it with some messages.
-	messages := &MessageHeap{}
-	heap.Init(messages)
+	// Create a priority queue and add messages.
+	pq := NewPriorityQueue()
 
-	// Concurrently add messages
-	var wg sync.WaitGroup
-	wg.Add(5)
+	pq.AddMessage(&Message{Urgency: 3, Timestamp: time.Now().Add(-5 * time.Minute), Content: "Message 3"})
+	pq.AddMessage(&Message{Urgency: 2, Timestamp: time.Now(), Content: "Message 2"})
+	pq.AddMessage(&Message{Urgency: 4, Timestamp: time.Now().Add(-2 * time.Minute), Content: "Message 4"})
+	pq.AddMessage(&Message{Urgency: 1, Timestamp: time.Now().Add(-3 * time.Minute), Content: "Message 1"})
+	pq.AddMessage(&Message{Urgency: 3, Timestamp: time.Now().Add(-1 * time.Minute), Content: "Message 3B"})
 
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			time.Sleep(time.Duration(i) * time.Second)
-			heap.Push(messages, Message{Urgency: 3, Timestamp: time.Now(), Content: fmt.Sprintf("Message 3%d", i)})
-		}
-	}()
+	// Remove a specific message.
+	pq.RemoveMessage("Message 4")
 
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			time.Sleep(time.Duration(i) * time.Second)
-			heap.Push(messages, Message{Urgency: 2, Timestamp: time.Now(), Content: fmt.Sprintf("Message 2%d", i)})
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			time.Sleep(time.Duration(i) * time.Second)
-			heap.Push(messages, Message{Urgency: 4, Timestamp: time.Now(), Content: fmt.Sprintf("Message 4%d", i)})
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			time.Sleep(time.Duration(i) * time.Second)
-			heap.Push(messages, Message{Urgency: 1, Timestamp: time.Now(), Content: fmt.Sprintf("Message 1%d", i)})
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			time.Sleep(time.Duration(i) * time.Second)
-			heap.Push(messages, Message{Urgency: 3, Timestamp: time.Now(), Content: fmt.Sprintf("Message 3B%d", i)})
-		}
-	}()
-
-	wg.Wait()
-
-	// Process messages in priority order.
+	// Print and remove messages in priority order.
 	fmt.Println("Messages in priority order:")
-	for messages.Len() > 0 {
-		msg := heap.Pop(messages).(Message)
+	for pq.Len() > 0 {
+		msg := pq.PopMessage()
 		fmt.Printf("[Urgency: %d, Timestamp: %s] %s\n", msg.Urgency, msg.Timestamp.Format("15:04:05"), msg.Content)
 	}
 }
