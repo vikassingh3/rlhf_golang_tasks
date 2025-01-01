@@ -6,45 +6,44 @@ import (
 )
 
 type workerData struct {
-	mutex sync.Mutex
-	slice []int
+	mu    sync.Mutex
+	data  []int
+}
+
+func (wd *workerData) append(value int) {
+	wd.mu.Lock()
+	defer wd.mu.Unlock()
+	wd.data = append(wd.data, value)
 }
 
 func (wd *workerData) reset() {
-	wd.mutex.Lock()
-	defer wd.mutex.Unlock()
-	wd.slice = wd.slice[:0]
+	wd.mu.Lock()
+	defer wd.mu.Unlock()
+	wd.data = nil
 }
 
-func (wd *workerData) append(data int) {
-	wd.mutex.Lock()
-	defer wd.mutex.Unlock()
-	wd.slice = append(wd.slice, data)
+func (wd *workerData) print() {
+	wd.mu.Lock()
+	defer wd.mu.Unlock()
+	fmt.Println("Worker Data:", wd.data)
 }
 
-func worker(wg *sync.WaitGroup, wd *workerData) {
+func worker(id int, wd *workerData, wg *sync.WaitGroup) {
 	defer wg.Done()
-	for i := 0; i < 100; i++ {
-		wd.reset()
-		for j := 0; j < 10; j++ {
-			wd.append(i*10 + j)
-		}
-		// Process the data in the slice
-		fmt.Println("Worker Data:", wd.slice)
+	for i := 0; i < 10; i++ {
+		wd.append(id*10 + i)
 	}
+	wd.print()
+	wd.reset()
 }
 
 func main() {
 	var wg sync.WaitGroup
-	wd := &workerData{
-		slice: make([]int, 0, 100), // Allocate a large capacity slice initially
-	}
+	wd := &workerData{}
 
-	numWorkers := 4
-	wg.Add(numWorkers)
-
-	for i := 0; i < numWorkers; i++ {
-		go worker(&wg, wd)
+	for i := 1; i <= 5; i++ {
+		wg.Add(1)
+		go worker(i, wd, &wg)
 	}
 
 	wg.Wait()
