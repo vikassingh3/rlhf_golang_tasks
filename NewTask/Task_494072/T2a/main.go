@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 )
@@ -38,47 +37,38 @@ func (s *FileStorage) ReadData() ([]byte, error) {
 }
 
 func (s *FileStorage) WriteData(data []byte) error {
-	// Write data to a temporary file first
-	tmpFile, err := ioutil.TempFile("", "migration")
+	err := ioutil.WriteFile(s.filename, data, 0644)
 	if err != nil {
 		return err
 	}
-	defer tmpFile.Close()
-
-	_, err = tmpFile.Write(data)
-	if err != nil {
-		return err
-	}
-
-	// Rename the temporary file to the destination file
-	err = os.Rename(tmpFile.Name(), s.filename)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
-func MigrateData(source DataMigrator, destination DataMigrator) error {
-	for {
-		chunk, err := source.ReadData()
-		if err != nil {
-			// If the error is io.EOF, we've reached the end of the data
-			if err == io.EOF {
-				break
+func MigrateData(source DataMigrator, destination DataMigrator, chunkSize int) error {
+	data, err := source.ReadData()
+	if err != nil {
+		return fmt.Errorf("error reading data from source: %w", err)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Rollback changes (e.g., delete temporary files)
+			if fs, ok := destination.(*FileStorage); ok {
+				os.Remove(fs.filename)
 			}
-			// Handle other errors
-			return fmt.Errorf("error reading data: %v", err)
+			panic(r)
 		}
+	}()
 
-		if len(chunk) == 0 {
-			break
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data) // Adjust the slice to not exceed the data length
 		}
-
-		err = destination.WriteData(chunk)
+		chunk := data[i:end]
+		err := destination.WriteData(chunk)
 		if err != nil {
-			// Handle write errors
-			return fmt.Errorf("error writing data: %v", err)
+			return fmt.Errorf("error writing data to destination: %w", err)
 		}
 	}
 
@@ -88,14 +78,19 @@ func MigrateData(source DataMigrator, destination DataMigrator) error {
 func main() {
 	// Example usage:
 	inMemorySource := &InMemoryStorage{data: []byte("Hello, World!")}
-	fileDestination := &FileStorage{filename: "./output.txt"}
+	fileDestination := &FileStorage{filename: "output.txt"}
 
-	err := MigrateData(inMemorySource, fileDestination)
+	chunkSize := 1024 // in bytes
+	err := MigrateData(inMemorySource, fileDestination, chunkSize)
 	if err != nil {
 		fmt.Println("Error migrating data:", err)
-		// You might want to log the error or perform some cleanup actions here
-		return
+	} else {
+		fmt.Println("Data migration successful.")
 	}
 
-	fmt.Println("Data migration successful.")
+	// Verify the written file (optional)
+	data, err := ioutil.ReadFile("output.txt")
+	if err == nil {
+		fmt.Println("Written data:", string(data))
+	}
 }
