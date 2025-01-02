@@ -1,46 +1,69 @@
-package main
-
-import (
-	"fmt"
-	"math/rand"
-	"time"
+package main  
+import (  
+    "fmt"
+    "runtime"
+    "sync"
+    "time"
 )
 
-func processEvent(event int, done chan<- bool) {
-	// Simulate some processing work using a more efficient algorithm
-	// For example, using math operations instead of a loop
-	for i := 0; i < event*1000; i++ {
-	}
+// Optimize processEvent by doing a bigger chunk of work per event 
+func processEvent(events []int) {  
+    for i, event := range events {
+        // Simulate some processing work by calculating the sum of even numbers from 0 to 10000
+        total := 0
+        for j := 0; j < 10000; j++ {
+            if j%2 == 0 {
+                total += j
+            }
+        }
+        events[i] = event * total
+    }
+    fmt.Println("Processed events...")
+}  
 
-	fmt.Println("Processed event:", event)
-	done <- true // Signal completion
-}
+func main() {  
+    // Set GOMAXPROCS to number of CPUs for better performance
+    runtime.GOMAXPROCS(runtime.NumCPU())
+    
+    const numEvents = 1000000
+    const batchSize = 10000
+    
+    // Start a timer to measure total processing time
+    start := time.Now()
+    
+    // Use a pool of goroutines to process events in batches
+    var wg sync.WaitGroup
+    wg.Add(numEvents / batchSize)
+    eventChannel := make(chan []int, 100) // Buffered channel to reduce blocking
+    
+    go func() {
+        for i := 0; i < numEvents; i += batchSize {
+            // Create batches of events
+            end := i + batchSize - 1
+            if end >= numEvents {
+                end = numEvents - 1
+            }
+            eventBatch := make([]int, end-i+1)
+            for j := i; j <= end; j++ {
+                eventBatch[j-i] = j // Simulate random event data
+            }
+            eventChannel <- eventBatch
+        }
+        close(eventChannel)
+    }()
 
-func main() {
-	rand.Seed(time.Now().UnixNano())
-	events := make([]int, 1000000)
-	for i := range events {
-		events[i] = rand.Intn(1000)
-	}
+    // Processor goroutines
+    for i := 0; i < 10; i++ {
+        go func() {
+            for events := range eventChannel {
+                processEvent(events)
+                wg.Done()
+            }
+        }()
+    }
 
-	// Create a buffered channel to allow worker goroutines to complete before blocking
-	done := make(chan bool, 10000)
+    wg.Wait()
 
-	// Start worker goroutines
-	numWorkers := 4 // You can adjust the number of workers based on your system's capabilities
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			for event := range events {
-				processEvent(event, done)
-			}
-		}()
-	}
-
-	// Wait for all workers to finish processing all events
-	for range events {
-		<-done
-	}
-
-	fmt.Println("All events processed.")
-}
-                    
+    elapsed := time.Since(start)
+    fmt.Printf("Took %s to process %d events.\n", elapsed, numEvents)
+} 
