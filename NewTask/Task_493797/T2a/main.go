@@ -3,84 +3,99 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"sync"
+	"time"
+
+	"github.com/gofrs/flock"
 )
 
-type Document struct {
+type FileData struct {
 	Content string `json:"content"`
-	Version int    `json:"version"`
+	Version string `json:"version"`
 }
-
-var fileLock sync.Mutex
 
 func main() {
-	filePath := "example.txt"
-
-	// Load the initial document
-	doc, err := loadDocument(filePath)
+	filePath := "./example.txt"
+	lockFilePath := filePath + ".lock"
+	
+	// Load initial file data with a version
+	fileData, err := loadFileData(filePath)
 	if err != nil {
-		fmt.Printf("Error loading document: %v\n", err)
+		fmt.Printf("Error loading file: %v\n", err.Error())
 		return
 	}
-
-	fmt.Printf("Current content: %s\nVersion: %d\n", doc.Content, doc.Version)
-
-	// Simulate a user edit
-	newContent := "Updated content"
-	newVersion := doc.Version + 1
-
-	// Save the edited document with optimistic locking
-	err = saveDocument(filePath, newContent, newVersion, doc.Version)
+	
+	// Simulate user editing the file
+	fileData.Content += " Edited by User1"
+	fileData.Version = generateVersion(fileData.Version)
+	
+	// Attempt to save changes
+	saved, err := saveFileData(filePath, lockFilePath, fileData)
 	if err != nil {
-		fmt.Printf("Error saving document: %v\n", err)
-	} else {
-		fmt.Println("Document saved successfully.")
+		fmt.Printf("Error saving file: %v\n", err)
+		return
 	}
+	
+	if !saved {
+		fmt.Println("Conflict detected. Please try again.")
+		return
+	}
+	
+	fmt.Println("File saved successfully.")
 }
 
-func loadDocument(filePath string) (*Document, error) {
-	file, err := os.Open(filePath)
+func loadFileData(filePath string) (*FileData, error) {
+	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	
+	var fileData FileData
+	if err := json.NewDecoder(file).Decode(&fileData); err != nil {
 		if os.IsNotExist(err) {
-			return &Document{Content: "", Version: 0}, nil
+			return &FileData{Content: "", Version: generateVersion("")}, nil
 		}
 		return nil, err
 	}
-	defer file.Close()
-
-	doc := &Document{}
-	if err := json.NewDecoder(file).Decode(doc); err != nil && err != io.EOF {
-		return nil, err
-	}
-
-	return doc, nil
+	
+	return &fileData, nil
 }
 
-func saveDocument(filePath, newContent string, newVersion, currentVersion int) error {
-	fileLock.Lock()
-	defer fileLock.Unlock()
-
-	doc, err := loadDocument(filePath)
+func saveFileData(filePath, lockFilePath string, fileData *FileData) (bool, error) {
+	lock := flock.New(lockFilePath) // Create a new flock instance for locking
+	locked, err := lock.TryLock()
 	if err != nil {
-		return err
+		return false, err
 	}
-
-	// Check for version conflict
-	if doc.Version != currentVersion {
-		return fmt.Errorf("version conflict detected: expected %d, got %d", currentVersion, doc.Version)
+	defer lock.Unlock()
+	
+	if !locked {
+		return false, fmt.Errorf("could not acquire lock")
 	}
-
-	// Update and save the document
-	doc.Content = newContent
-	doc.Version = newVersion
-
-	file, err := os.Create(filePath)
+	
+	currentData, err := loadFileData(filePath)
 	if err != nil {
-		return err
+		return false, err
+	}
+	
+	if currentData.Version != fileData.Version {
+		return false, fmt.Errorf("conflict detected: version mismatch")
+	}
+	
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return false, err
 	}
 	defer file.Close()
+	
+	if err := json.NewEncoder(file).Encode(fileData); err != nil {
+		return false, err
+	}
+	
+	return true, nil
+}
 
-	return json.NewEncoder(file).Encode(doc)
+func generateVersion(currentVersion string) string {
+	return fmt.Sprintf("%s-%d", currentVersion, time.Now().UnixNano())
 }

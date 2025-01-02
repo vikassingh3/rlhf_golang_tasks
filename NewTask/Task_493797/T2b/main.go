@@ -1,43 +1,102 @@
+package main
 
+import (
+	"fmt"
+	"os"
+)
 
-package main  
-import (  
-    "fmt"
-    "os/exec"
-)  
+// File struct with Version field
+type File struct {
+	Content []byte  `json:"content"`
+	Version int   `json:"version"`
+}
 
-func main() {  
-    // Step 1: Perform git pull to fetch the latest changes
-    cmd := exec.Command("git", "pull")  
-    err := cmd.Run()  
-    if err != nil {  
-        fmt.Println("Error pulling changes:", err)  
-    }  
+// openFile function to open and read a file along with its version
+func openFile(filename string) (*File, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-    // Step 2: Resolve merge conflicts manually using a text editor
-    // The conflicted file will have '<<<<<<< HEAD' and '=======' markers
-    // Users need to edit the file to resolve the conflicts
+	var version int
+	// Read the version number from the first line of the file
+	_, err = fmt.Fscanf(file, "%d\n", &version)
+	if err != nil {
+		return nil, fmt.Errorf("error reading version: %w", err)
+	}
 
-    // Step 3: Add the resolved conflicts to the staging area
-    cmd = exec.Command("git", "add", "conflicted_file.txt")  
-    err = cmd.Run()  
-    if err != nil {  
-        fmt.Println("Error adding resolved conflicts:", err)  
-    }  
+	// Read the rest of the file content
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
 
-    // Step 4: Commit the resolved changes
-    cmd = exec.Command("git", "commit", "-m", "Resolved merge conflicts")  
-    err = cmd.Run()  
-    if err != nil {  
-        fmt.Println("Error committing resolved changes:", err)  
-    }  
+	// The first line in the file will be the version, so we need to skip that part
+	content = content[len(fmt.Sprintf("%d\n", version)):]
 
-    // Step 5: Push the resolved changes to the repository
-    cmd = exec.Command("git", "push")  
-    err = cmd.Run()  
-    if err != nil {  
-        fmt.Println("Error pushing resolved changes:", err)  
-    }  
-}  
+	return &File{Content: content, Version: version}, nil
+}
 
+// writeFile function to write a file with the updated content and version
+func writeFile(filename string, file *File) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
+	// Write the updated version number and content to the file
+	_, err = fmt.Fprintf(f, "%d\n", file.Version)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(file.Content)
+	return err
+}
+
+func resolveConflict(serverFile *File, userFile *File) *File {
+	// Implement your conflict resolution strategy here (e.g., use merge algorithm)
+	// In this simple example, we'll just overwrite the server file with the user file
+	return userFile
+}
+
+func main() {
+	serverFilename := "./server_file.txt"
+	userFilename := "./user_file.txt"
+
+	// Load the files from disk
+	serverFile, err := openFile(serverFilename)
+	if err != nil {
+		fmt.Printf("Error opening server file: %v\n", err)
+		return
+	}
+	userFile, err := openFile(userFilename)
+	if err != nil {
+		fmt.Printf("Error opening user file: %v\n", err)
+		return
+	}
+
+	// Simulate a conflict by editing both files separately
+	serverFile.Content = append(serverFile.Content, []byte(" Server change")...)
+	serverFile.Version++
+
+	userFile.Content = append(userFile.Content, []byte(" User change")...)
+	userFile.Version++
+
+	if serverFile.Version != userFile.Version {
+		fmt.Println("Conflict detected!")
+		// Resolve the conflict (e.g., using versioning, merge, etc.)
+		updatedFile := resolveConflict(serverFile, userFile)
+
+		// Write the updated file back to disk (overwriting the server file for this example)
+		err = writeFile(serverFilename, updatedFile)
+		if err != nil {
+			fmt.Printf("Error writing file: %v\n", err)
+		} else {
+			fmt.Println("File resolved and updated successfully.")
+		}
+	} else {
+		fmt.Println("No conflicts detected.")
+	}
+}
