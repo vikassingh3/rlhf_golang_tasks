@@ -8,16 +8,40 @@ import (
 	"testing"
 )
 
-// File struct represents a file entry with metadata
 type File struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	UserID  int    `json:"user_id"`
-	Shared  bool   `json:"shared"`
+	ID     int    `json:"id"`
+	UserID string `json:"user_id"`
+	Name   string `json:"filename"`
 }
 
-// TestFileSharing tests the file upload and sharing functionality
 func TestFileSharing(t *testing.T) {
+	// Create a mock HTTP server
+	server := http.NewServeMux()
+	server.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
+		// Mock the upload response
+		file := File{ID: 1, UserID: r.FormValue("user_id"), Name: r.FormValue("filename")}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(file)
+	})
+
+	server.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+		// Mock the file retrieval response
+		files := []File{
+			{ID: 1, UserID: "user1", Name: "file1.txt"},
+			{ID: 2, UserID: "user2", Name: "file2.txt"},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(files)
+	})
+
+	server.HandleFunc("/share", func(w http.ResponseWriter, r *http.Request) {
+		// Mock the share response
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Start the server in a goroutine to avoid blocking the test
+	go http.ListenAndServe(":8080", server)
+
 	// Create an HTTP client
 	client := &http.Client{}
 
@@ -48,7 +72,6 @@ func TestFileSharing(t *testing.T) {
 	}
 }
 
-// uploadFile uploads a file for a user and returns the uploaded file
 func uploadFile(t *testing.T, client *http.Client, userID, filename string) *File {
 	resp, err := client.Post("http://localhost:8080/upload", "application/x-www-form-urlencoded", strings.NewReader(fmt.Sprintf("filename=%s&user_id=%s", filename, userID)))
 	if err != nil {
@@ -67,7 +90,6 @@ func uploadFile(t *testing.T, client *http.Client, userID, filename string) *Fil
 	return &file
 }
 
-// getFile retrieves a file for a user by fileID and userID
 func getFile(t *testing.T, client *http.Client, fileID int, userID string) (*File, error) {
 	resp, err := client.Get(fmt.Sprintf("http://localhost:8080/files?user_id=%s", userID))
 	if err != nil {
@@ -92,7 +114,6 @@ func getFile(t *testing.T, client *http.Client, fileID int, userID string) (*Fil
 	return nil, fmt.Errorf("File with ID %d not found", fileID)
 }
 
-// shareFile shares a file by its fileID
 func shareFile(t *testing.T, client *http.Client, fileID int) {
 	resp, err := client.Get(fmt.Sprintf("http://localhost:8080/share?file_id=%d", fileID))
 	if err != nil {

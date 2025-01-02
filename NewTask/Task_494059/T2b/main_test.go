@@ -6,25 +6,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Define the File struct
+// File struct to represent a file
 type File struct {
 	ID     int
 	Name   string
 	UserID int
-	Shared bool
 	Data   []byte
+	Shared bool
 }
 
-// Declare a global variable to store the files (simulate a database)
+// Declare a global variable to hold the files during tests
 var files []File
 
 // Setup and teardown functions for integration tests
 func setup() {
-	files = nil // Reset the files slice before each test
+	files = nil
 }
 
 func teardown() {
-	files = nil // Reset the files slice after each test
+	files = nil
 }
 
 // TestFileSharingIntegration tests file sharing functionality
@@ -38,7 +38,7 @@ func TestFileSharingIntegration(t *testing.T) {
 	fileName := "test_file.txt"
 	uploadFile(fileName, user1ID)
 
-	// User 2 lists the files - Should see only User 1's file
+	// User 2 lists the files - Should see only User 1's file (empty list expected for User 2)
 	user2Files := listFiles(2)
 	assert.Len(t, user2Files, 0)
 
@@ -75,7 +75,7 @@ func listFiles(userID int) []File {
 	// Implement your file listing logic using the 'files' slice
 	var userFiles []File
 	for _, file := range files {
-		if file.UserID == userID {
+		if file.UserID == userID || file.Shared { // Allow user to see their own files or shared files
 			userFiles = append(userFiles, file)
 		}
 	}
