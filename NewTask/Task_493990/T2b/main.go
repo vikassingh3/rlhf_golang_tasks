@@ -18,7 +18,7 @@ type Record struct {
 }
 
 func main() {
-    filePath := "data.csv"
+    filePath := "./data.csv"
     records, err := parseCSV(filePath)
     if err != nil {
         log.Fatalf("Error parsing CSV file: %v", err)
@@ -50,35 +50,50 @@ func parseCSV(filePath string) ([]Record, error) {
 
         var r Record
         // Parse each field in the CSV record
+
+        // Name (required field)
         if len(record) >= 1 {
             r.Name = record[0]
+        } else {
+            log.Printf("Missing Name field, skipping record")
+            continue // Skip the record if Name is missing
         }
+
+        // Age (optional, default 0 if missing or invalid)
         if len(record) >= 2 {
             age, err := strconv.Atoi(record[1])
             if err != nil {
-                // Handle invalid age format gracefully
                 r.Age = 0
                 log.Printf("Invalid age format: %v, setting default value 0", record[1])
             } else {
                 r.Age = age
             }
+        } else {
+            r.Age = 0
         }
+
+        // Email (optional, default empty if missing)
         if len(record) >= 3 {
             r.Email = record[2]
+        } else {
+            r.Email = "" // Setting default empty value for missing Email
         }
+
+        // Balance (optional, default to 0.0 if missing or invalid)
         if len(record) >= 4 {
             balance, err := strconv.ParseFloat(record[3], 64)
             if err != nil {
-                // Handle invalid balance format gracefully
                 r.Balance = 0.0
                 log.Printf("Invalid balance format: %v, setting default value 0.0", record[3])
             } else {
                 r.Balance = balance
             }
+        } else {
+            r.Balance = 0.0 // Setting default balance value if missing
         }
 
         records = append(records, r)
     }
 
     return records, nil
-} 
+}
