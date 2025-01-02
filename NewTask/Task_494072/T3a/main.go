@@ -1,33 +1,25 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 )
 
-// DataMigrator defines an interface for migration operations
 type DataMigrator interface {
-	ReadData(maxBytes int) ([]byte, error)
+	ReadData() ([]byte, error)
 	WriteData(data []byte) error
+	Lock() error
+	Unlock() error
 }
 
-// InMemoryStorage stores data in memory
 type InMemoryStorage struct {
 	data []byte
 }
 
-func (s *InMemoryStorage) ReadData(maxBytes int) ([]byte, error) {
-	if len(s.data) == 0 {
-		return nil, io.EOF
-	}
-	end := min(len(s.data), maxBytes)
-	data := s.data[:end]
-	s.data = s.data[end:]
-	return data, nil
+func (s *InMemoryStorage) ReadData() ([]byte, error) {
+	return s.data, nil
 }
 
 func (s *InMemoryStorage) WriteData(data []byte) error {
@@ -35,93 +27,110 @@ func (s *InMemoryStorage) WriteData(data []byte) error {
 	return nil
 }
 
-// FileStorage handles file-based storage
+func (s *InMemoryStorage) Lock() error  { return nil }
+func (s *InMemoryStorage) Unlock() error { return nil }
+
 type FileStorage struct {
 	filename string
+	lockFile *os.File // Add lockFile field to manage locks
 }
 
-func (s *FileStorage) ReadData(maxBytes int) ([]byte, error) {
+func (s *FileStorage) ReadData() ([]byte, error) {
 	data, err := ioutil.ReadFile(s.filename)
 	if err != nil {
 		return nil, err
 	}
-	return data[:min(len(data), maxBytes)], nil
+	return data, nil
 }
 
 func (s *FileStorage) WriteData(data []byte) error {
-	tmpFile, err := ioutil.TempFile("", "migration")
+	err := ioutil.WriteFile(s.filename, data, 0644)
 	if err != nil {
 		return err
-	}
-	defer tmpFile.Close()
-
-	_, err = tmpFile.Write(data)
-	if err != nil {
-		return err
-	}
-
-	return os.Rename(tmpFile.Name(), s.filename)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// MigrateData handles data migration with error recovery and slice integrity checks
-func MigrateData(source DataMigrator, destination DataMigrator) error {
-	retries := 3
-	for retries > 0 {
-		err := func() error {
-			chunk, err := source.ReadData(1024 * 1024) // Read in chunks
-			if err != nil {
-				if err == io.EOF {
-					return nil
-				}
-				return fmt.Errorf("error reading data: %v", err)
-			}
-
-			// Validate data integrity
-			hash := md5.New()
-			_, err = hash.Write(chunk)
-			if err != nil {
-				return fmt.Errorf("error computing hash: %v", err)
-			}
-			checksum := hex.EncodeToString(hash.Sum(nil))
-
-			fmt.Printf("Checksum: %v\n", checksum)
-
-			// Write data to destination
-			err = destination.WriteData(chunk)
-			if err != nil {
-				return fmt.Errorf("error writing data: %v", err)
-			}
-
-			return nil
-		}()
-		if err != nil {
-			retries--
-			fmt.Printf("Error occurred: %v. Retrying... (%d retries left)\n", err, retries)
-			if retries == 0 {
-				return fmt.Errorf("migration failed after retries: %v", err)
-			}
-		} else {
-			break
-		}
 	}
 	return nil
 }
 
-func main() {
-	source := &InMemoryStorage{data: []byte("Test data")}
-	dest := &FileStorage{filename: "output.txt"}
-
-	err := MigrateData(source, dest)
+func (s *FileStorage) Lock() error {
+	lockPath := filepath.Join(filepath.Dir(s.filename), ".lock")
+	tempFile, err := os.Create(lockPath)
 	if err != nil {
-		fmt.Println("Migration failed:", err)
+		return err
+	}
+	s.lockFile = tempFile
+	return nil
+}
+
+func (s *FileStorage) Unlock() error {
+	if s.lockFile != nil {
+		err := s.lockFile.Close()
+		if err != nil {
+			return err
+		}
+		lockPath := s.lockFile.Name()
+		s.lockFile = nil
+		return os.Remove(lockPath) // Clean up the lock file
+	}
+	return nil
+}
+
+func MigrateData(source DataMigrator, destination DataMigrator, chunkSize int) error {
+	data, err := source.ReadData()
+	if err != nil {
+		return fmt.Errorf("error reading data from source: %w", err)
+	}
+
+	// Lock destination before writing
+	if err := destination.Lock(); err != nil {
+		return fmt.Errorf("error locking destination: %w", err)
+	}
+	defer func() {
+		if err := destination.Unlock(); err != nil {
+			fmt.Println("error unlocking destination:", err)
+		}
+	}()
+
+	// Implement a simple rollback by deleting the file
+	defer func() {
+		if r := recover(); r != nil {
+			if fs, ok := destination.(*FileStorage); ok {
+				os.Remove(fs.filename)
+			}
+			panic(r)
+		}
+	}()
+
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data) // Adjust the slice to not exceed the data length
+		}
+		chunk := data[i:end]
+		err := destination.WriteData(chunk)
+		if err != nil {
+			return fmt.Errorf("error writing data to destination: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func main() {
+	// Example usage:
+	inMemorySource := &InMemoryStorage{data: []byte("Hello, World!")}
+	fileDestination := &FileStorage{filename: "output.txt"}
+
+	chunkSize := 1024 // in bytes
+	err := MigrateData(inMemorySource, fileDestination, chunkSize)
+	if err != nil {
+		fmt.Println("Error migrating data:", err)
 	} else {
-		fmt.Println("Migration succeeded!")
+		fmt.Println("Data migration successful.")
+	}
+
+	// Verify the written file (optional)
+	data, err := ioutil.ReadFile("output.txt")
+	if err == nil {
+		fmt.Println("Written data:", string(data))
 	}
 }

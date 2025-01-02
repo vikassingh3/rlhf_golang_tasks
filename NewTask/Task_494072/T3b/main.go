@@ -1,103 +1,149 @@
 package main
 
 import (
-	"encoding/binary"
+	"errors"
 	"fmt"
-	"hash/crc32"
-	"sync"
+	"io/ioutil"
+	"os"
 )
 
-// DataMigrator defines the methods required for data migration.
 type DataMigrator interface {
-	ReadData(chunkSize int) ([]byte, error)
+	ReadData() ([]byte, error)
 	WriteData(data []byte) error
 }
 
-// InMemoryStorage is an in-memory implementation of DataMigrator.
 type InMemoryStorage struct {
 	data []byte
-	mu   sync.Mutex
 }
 
-// ReadData reads a chunk of data from the in-memory storage.
-func (s *InMemoryStorage) ReadData(chunkSize int) ([]byte, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if len(s.data) == 0 {
-		return nil, fmt.Errorf("EOF") // No more data to read
-	}
-
-	// Ensure chunkSize does not exceed available data
-	if chunkSize > len(s.data) {
-		chunkSize = len(s.data)
-	}
-
-	chunk := s.data[:chunkSize]
-	s.data = s.data[chunkSize:] // Remove the chunk from storage
-	return chunk, nil
+func (s *InMemoryStorage) ReadData() ([]byte, error) {
+	return s.data, nil
 }
 
-// WriteData writes data to the in-memory storage.
 func (s *InMemoryStorage) WriteData(data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.data = append(s.data, data...)
 	return nil
 }
 
-// CalculateChecksum computes a checksum for a given byte slice.
-func calculateChecksum(data []byte) uint32 {
-	return crc32.ChecksumIEEE(data)
+type FileStorage struct {
+	filename    string
+	tempFilename string // Used for temporary file during migration
 }
 
-// MigrateData migrates data from a source to a destination with chunking and checksum validation.
+func (s *FileStorage) ReadData() ([]byte, error) {
+	data, err := ioutil.ReadFile(s.filename)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (s *FileStorage) WriteData(data []byte) error {
+	err := ioutil.WriteFile(s.tempFilename, data, 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *FileStorage) Commit() error {
+	// Replace the original file with the temp file
+	err := os.Rename(s.tempFilename, s.filename)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *FileStorage) Rollback() error {
+	// Delete the temp file in case of rollback
+	err := os.Remove(s.tempFilename)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+type Transaction interface {
+	Commit() error
+	Rollback() error
+}
+
+type inMemoryTransaction struct {
+	storage *InMemoryStorage
+	data    []byte
+}
+
+func (t *inMemoryTransaction) Commit() error {
+	t.storage.data = t.data
+	return nil
+}
+
+func (t *inMemoryTransaction) Rollback() error {
+	// Nothing to roll back in in-memory storage
+	return nil
+}
+
+func startTransaction(storage DataMigrator) (Transaction, error) {
+	switch s := storage.(type) {
+	case *InMemoryStorage:
+		return &inMemoryTransaction{storage: s, data: s.data}, nil
+	case *FileStorage:
+		return s, nil
+	default:
+		return nil, errors.New("unsupported storage for transaction")
+	}
+}
+
 func MigrateData(source DataMigrator, destination DataMigrator, chunkSize int) error {
-	for {
-		// Read chunk from source
-		chunk, err := source.ReadData(chunkSize)
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
-			}
-			return fmt.Errorf("error reading data: %w", err)
-		}
-
-		// Calculate checksum
-		checksum := calculateChecksum(chunk)
-
-		// Append checksum to the chunk
-		checksumBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(checksumBytes, checksum)
-		chunkWithChecksum := append(chunk, checksumBytes...)
-
-		// Write chunk with checksum to destination
-		err = destination.WriteData(chunkWithChecksum)
-		if err != nil {
-			return fmt.Errorf("error writing data: %w", err)
-		}
+	// Start a transaction on the destination storage
+	tx, err := startTransaction(destination)
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %w", err)
 	}
 
-	// Validate data integrity during reading from destination
-	for {
-		// Read chunk with checksum from destination
-		chunkWithChecksum, err := destination.ReadData(chunkSize + 4)
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
-			}
-			return fmt.Errorf("error reading data: %w", err)
+	defer func() {
+		if r := recover(); r != nil {
+			// Rollback changes if a panic occurs
+			tx.Rollback()
+			panic(r)
 		}
+	}()
 
-		// Separate data and checksum
-		receivedChecksum := binary.LittleEndian.Uint32(chunkWithChecksum[len(chunkWithChecksum)-4:])
-		data := chunkWithChecksum[:len(chunkWithChecksum)-4]
+	// Perform migration
+	err = migrateDataWithTransaction(source, destination, chunkSize)
+	if err != nil {
+		// Rollback changes if an error occurs
+		tx.Rollback()
+		return fmt.Errorf("error migrating data: %w", err)
+	}
 
-		// Validate checksum
-		calculatedChecksum := calculateChecksum(data)
-		if receivedChecksum != calculatedChecksum {
-			return fmt.Errorf("data corruption detected in chunk")
+	// Commit the transaction if everything succeeds
+	err = tx.Commit()
+	if err != nil {
+		// Rollback changes if an error occurs during commit
+		tx.Rollback()
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+func migrateDataWithTransaction(source DataMigrator, destination DataMigrator, chunkSize int) error {
+	data, err := source.ReadData()
+	if err != nil {
+		return fmt.Errorf("error reading data from source: %w", err)
+	}
+
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk := data[i:end]
+		err := destination.WriteData(chunk)
+		if err != nil {
+			return fmt.Errorf("error writing data to destination: %w", err)
 		}
 	}
 
@@ -105,19 +151,22 @@ func MigrateData(source DataMigrator, destination DataMigrator, chunkSize int) e
 }
 
 func main() {
-	// Source with initial data
-	source := &InMemoryStorage{
-		data: []byte("Hello, Go! This is a test of data migration."),
+	inMemorySource := &InMemoryStorage{data: []byte("This is some test data to migrate.")}
+	fileDestination := &FileStorage{filename: "output.txt", tempFilename: "output_temp.txt"}
+
+	chunkSize := 10
+	err := MigrateData(inMemorySource, fileDestination, chunkSize)
+	if err != nil {
+		fmt.Println("Error migrating data:", err)
+	} else {
+		fmt.Println("Data migration successful.")
 	}
 
-	// Destination with no data initially
-	destination := &InMemoryStorage{}
-
-	// Migrate data with chunk size 10 bytes
-	err := MigrateData(source, destination, 10)
-	if err != nil {
-		fmt.Println("Migration failed:", err)
+	// Verify the written file
+	data, err := ioutil.ReadFile("output.txt")
+	if err == nil {
+		fmt.Println("Written data:", string(data))
 	} else {
-		fmt.Println("Migration successful. Destination data:", string(destination.data))
+		fmt.Println("Error reading migrated file:", err)
 	}
 }
