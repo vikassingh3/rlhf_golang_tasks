@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -7,8 +8,8 @@ import (
 
 // File struct with Version field
 type File struct {
-	Content []byte  `json:"content"`
-	Version int   `json:"version"`
+	Content []byte
+	Version int
 }
 
 // openFile function to open and read a file along with its version
@@ -19,21 +20,17 @@ func openFile(filename string) (*File, error) {
 	}
 	defer file.Close()
 
-	var version int
-	// Read the version number from the first line of the file
-	_, err = fmt.Fscanf(file, "%d\n", &version)
-	if err != nil {
-		return nil, fmt.Errorf("error reading version: %w", err)
-	}
-
-	// Read the rest of the file content
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	// The first line in the file will be the version, so we need to skip that part
-	content = content[len(fmt.Sprintf("%d\n", version)):]
+	// Read the version number from the first line of the file
+	var version int
+	_, err = fmt.Fscanf(file, "%d\n", &version)
+	if err != nil {
+		return nil, err
+	}
 
 	return &File{Content: content, Version: version}, nil
 }
