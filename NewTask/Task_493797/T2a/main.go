@@ -1,101 +1,99 @@
+
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"time"
-
-	"github.com/gofrs/flock"
 )
 
-type FileData struct {
-	Content string `json:"content"`
-	Version string `json:"version"`
+// File struct with Version field
+type File struct {
+	Content []byte
+	Version int
+}
+
+// openFile function to open and read a file along with its version
+func openFile(filename string) (*File, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read the version number from the first line of the file
+	var version int
+	_, err = fmt.Fscanf(file, "%d\n", &version)
+	if err != nil {
+		return nil, err
+	}
+
+	return &File{Content: content, Version: version}, nil
+}
+
+// writeFile function to write a file with the updated content and version
+func writeFile(filename string, file *File) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Write the updated version number and content to the file
+	_, err = fmt.Fprintf(f, "%d\n", file.Version)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(file.Content)
+	return err
+}
+
+func resolveConflict(serverFile *File, userFile *File) *File {
+	// Implement your conflict resolution strategy here (e.g., use merge algorithm)
+	// In this simple example, we'll just overwrite the server file with the user file
+	return userFile
 }
 
 func main() {
-	filePath := "./example.txt"
-	lockFilePath := filePath + ".lock"
-	
-	// Load initial file data with a version
-	fileData, err := loadFileData(filePath)
-	if err != nil {
-		fmt.Printf("Error loading file: %v\n", err.Error())
-		return
-	}
-	
-	// Simulate user editing the file
-	fileData.Content += " Edited by User1"
-	fileData.Version = generateVersion(fileData.Version)
-	
-	// Attempt to save changes
-	saved, err := saveFileData(filePath, lockFilePath, fileData)
-	if err != nil {
-		fmt.Printf("Error saving file: %v\n", err)
-		return
-	}
-	
-	if !saved {
-		fmt.Println("Conflict detected. Please try again.")
-		return
-	}
-	
-	fmt.Println("File saved successfully.")
-}
+	serverFilename := "server_file.txt"
+	userFilename := "user_file.txt"
 
-func loadFileData(filePath string) (*FileData, error) {
-	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0644)
+	// Load the files from disk
+	serverFile, err := openFile(serverFilename)
 	if err != nil {
-		return nil, err
+		fmt.Printf("Error opening server file: %v\n", err)
+		return
 	}
-	defer file.Close()
-	
-	var fileData FileData
-	if err := json.NewDecoder(file).Decode(&fileData); err != nil {
-		if os.IsNotExist(err) {
-			return &FileData{Content: "", Version: generateVersion("")}, nil
+	userFile, err := openFile(userFilename)
+	if err != nil {
+		fmt.Printf("Error opening user file: %v\n", err)
+		return
+	}
+
+	// Simulate a conflict by editing both files separately
+	serverFile.Content = append(serverFile.Content, []byte(" Server change")...)
+	serverFile.Version++
+
+	userFile.Content = append(userFile.Content, []byte(" User change")...)
+	userFile.Version++
+
+	if serverFile.Version != userFile.Version {
+		fmt.Println("Conflict detected!")
+		// Resolve the conflict (e.g., using versioning, merge, etc.)
+		updatedFile := resolveConflict(serverFile, userFile)
+
+		// Write the updated file back to disk (overwriting the server file for this example)
+		err = writeFile(serverFilename, updatedFile)
+		if err != nil {
+			fmt.Printf("Error writing file: %v\n", err)
+		} else {
+			fmt.Println("File resolved and updated successfully.")
 		}
-		return nil, err
+	} else {
+		fmt.Println("No conflicts detected.")
 	}
-	
-	return &fileData, nil
-}
-
-func saveFileData(filePath, lockFilePath string, fileData *FileData) (bool, error) {
-	lock := flock.New(lockFilePath) // Create a new flock instance for locking
-	locked, err := lock.TryLock()
-	if err != nil {
-		return false, err
-	}
-	defer lock.Unlock()
-	
-	if !locked {
-		return false, fmt.Errorf("could not acquire lock")
-	}
-	
-	currentData, err := loadFileData(filePath)
-	if err != nil {
-		return false, err
-	}
-	
-	if currentData.Version != fileData.Version {
-		return false, fmt.Errorf("conflict detected: version mismatch")
-	}
-	
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-	
-	if err := json.NewEncoder(file).Encode(fileData); err != nil {
-		return false, err
-	}
-	
-	return true, nil
-}
-
-func generateVersion(currentVersion string) string {
-	return fmt.Sprintf("%s-%d", currentVersion, time.Now().UnixNano())
 }
