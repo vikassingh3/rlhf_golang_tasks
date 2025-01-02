@@ -1,58 +1,101 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gofrs/flock"
 )
 
+type FileData struct {
+	Content string
+	Version string
+}
+
 func main() {
-	// Define the file path to work on
 	filePath := "example.txt"
+	lockFilePath := filePath + ".lock"
+	
+	// Load initial file data with a version
+	fileData, err := loadFileData(filePath)
+	if err != nil {
+		fmt.Printf("Error loading file: %v\n", err)
+		return
+	}
+	
+	// Simulate user editing the file
+	fileData.Content += " Edited by User1"
+	fileData.Version = generateVersion(fileData.Version)
+	
+	// Attempt to save changes
+	saved, err := saveFileData(filePath, lockFilePath, fileData)
+	if err != nil {
+		fmt.Printf("Error saving file: %v\n", err)
+		return
+	}
+	
+	if !saved {
+		fmt.Println("Conflict detected. Please try again.")
+		return
+	}
+	
+	fmt.Println("File saved successfully.")
+}
 
-	// Create a new flock.Flock instance for the file
-	lock := flock.New(filePath + ".lock") // Use a separate lock file
+func loadFileData(filePath string) (*FileData, error) {
+	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	
+	var fileData FileData
+	if err := json.NewDecoder(file).Decode(&fileData); err != nil {
+		if os.IsNotExist(err) {
+			return &FileData{Content: "", Version: generateVersion("")}, nil
+		}
+		return nil, err
+	}
+	
+	return &fileData, nil
+}
 
-	// Attempt to acquire an exclusive lock on the file
+func saveFileData(filePath, lockFilePath string, fileData *FileData) (bool, error) {
+	lock := flock.New(lockFilePath) // Create a new flock instance for locking
 	locked, err := lock.TryLock()
 	if err != nil {
-		fmt.Printf("Error acquiring lock: %v\n", err)
-		return
+		return false, err
 	}
-
-	// Ensure the lock is released when we're done
 	defer lock.Unlock()
-
+	
 	if !locked {
-		fmt.Println("Could not acquire lock, another process might be using the file.")
-		return
+		return false, fmt.Errorf("could not acquire lock")
 	}
-
-	// Open the file for reading and writing, creating it if necessary
-	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
+	
+	currentData, err := loadFileData(filePath)
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
-		return
+		return false, err
 	}
-	defer f.Close()
-
-	// Read the current content of the file
-	content, err := os.ReadFile(filePath)
+	
+	if currentData.Version != fileData.Version {
+		return false, fmt.Errorf("conflict detected: version mismatch")
+	}
+	
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
-		return
+		return false, err
 	}
-
-	// Modify the content (e.g., append some data)
-	modifiedContent := append(content, []byte(" Modified by User1")...)
-
-	// Write the modified content back to the file
-	err = os.WriteFile(filePath, modifiedContent, 0644)
-	if err != nil {
-		fmt.Printf("Error writing file: %v\n", err)
-		return
+	defer file.Close()
+	
+	if err := json.NewEncoder(file).Encode(fileData); err != nil {
+		return false, err
 	}
+	
+	return true, nil
+}
 
-	fmt.Println("File modified successfully by User1.")
+func generateVersion(currentVersion string) string {
+	return fmt.Sprintf("%s-%d", currentVersion, time.Now().UnixNano())
 }
