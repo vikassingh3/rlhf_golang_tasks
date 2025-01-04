@@ -9,23 +9,25 @@ import (
 )
 
 func main() {
-	// Connect to the database
+	// Database connection string
 	connString := "host=localhost user=your_username dbname=healthcare password=your_password sslmode=disable"
+
+	// Connect to the database
 	db, err := sql.Open("postgres", connString)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error opening database: %v", err)
 	}
-	defer db.Close() // Ensure the database connection is closed
+	defer db.Close()
 
-	// Prepare a SQL query
+	// Query to retrieve patient data
 	query := "SELECT patient_id, name, age FROM patients"
 
 	// Execute the query
 	rows, err := db.Query(query)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error executing query: %v", err)
 	}
-	defer rows.Close() // Ensure the result set is closed
+	defer rows.Close()
 
 	// Iterate through the result set using a range loop
 	for rows.Next() {
@@ -33,20 +35,18 @@ func main() {
 		var name string
 		var age int
 
-		// Scan each row into variables
-		err = rows.Scan(&patientID, &name, &age)
-		if err != nil {
-			log.Fatal(err)
+		// Scan row data into variables
+		if err := rows.Scan(&patientID, &name, &age); err != nil {
+			log.Fatalf("Error scanning row: %v", err)
 		}
 
-		// Print the result
+		// Print each record
 		fmt.Printf("Patient ID: %d, Name: %s, Age: %d\n", patientID, name, age)
 	}
 
-	// Check for any errors during row iteration
-	err = rows.Err()
-	if err != nil {
-		log.Fatal(err)
+	// Check for errors after iteration
+	if err = rows.Err(); err != nil {
+		log.Fatalf("Row iteration error: %v", err)
 	}
 
 	fmt.Println("Query completed successfully.")
