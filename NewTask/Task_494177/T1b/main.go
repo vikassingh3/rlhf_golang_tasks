@@ -1,43 +1,40 @@
-package main  
-import (  
-    "fmt"
-    "github.com/jinzhu/gorm"
-    _ "github.com/jinzhu/gorm/dialects/mysql" // Choose your database dialect
-    "time"
+package main
+
+import (
+	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-type User struct {
-    ID        uint       `gorm:"primary_key"`
-    CreatedAt time.Time  `gorm:"default:CURRENT_TIMESTAMP"`
-    UpdatedAt time.Time  `gorm:"default:CURRENT_TIMESTAMP"`
-    DeletedAt *time.Time `sql:"index"`
-    Name      string     `gorm:"size:255"`
-}
+func main() {
+	// Initialize the database connection
+	dsn := "host=localhost user=postgres password=root dbname=teastall port=5432 sslmode=disable TimeZone=Asia/Kolkata"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic("failed to connect database")
+	}
 
-func main() {  
-    // Initialize database connection as shown earlier
-    db, err := gorm.Open("mysql", "user:root@/teastall?charset=utf8&parseTime=True&loc=Local&timeout=10s")
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-    defer db.Close()
+	// Configure connection pool settings
+	sqlDB, err := db.DB()
+	if err != nil {
+		panic("failed to get database instance")
+	}
 
-    // Automatic table migration
-    db.AutoMigrate(&User{})
+	// Set connection pool configurations
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-    // Create a new user
-    user := User{Name: "John Doe"}
-    db.Create(&user)
+	// Example operation
+	type User struct {
+		ID   uint   `gorm:"primaryKey"`
+		Name string `gorm:"not null"`
+	}
 
-    // Find a user by ID
-    var foundUser User
-    db.First(&foundUser, user.ID)
-    fmt.Println("Found user:", foundUser.Name)
+	// Auto migrate
+	db.AutoMigrate(&User{})
 
-    // Update a user's name
-    db.Model(&foundUser).Update("Name", "Jane Doe")
-
-    // Delete a user
-    db.Delete(&foundUser)
+	// Create a user
+	db.Create(&User{Name: "John Doe"})
 }
