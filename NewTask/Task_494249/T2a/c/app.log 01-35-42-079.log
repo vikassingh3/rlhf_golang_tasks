@@ -1,0 +1,12 @@
+APP: 2025/01/05 01:20:01 main.go:22: This is a log message.
+APP: 2025/01/05 01:20:01 main.go:23: Formatted log message: Hello, world!
+APP: 2025/01/05 01:20:01 main.go:24: This will cause the program to panic.
+APP: 2025/01/05 01:21:06 main.go:22: This is a log message.
+APP: 2025/01/05 01:21:06 main.go:23: Formatted log message: Hello, world!
+APP: 2025/01/05 01:21:06 main.go:26: This is a log message, not a panic.
+APP: 2025/01/05 01:21:14 main.go:22: This is a log message.
+APP: 2025/01/05 01:21:14 main.go:23: Formatted log message: Hello, world!
+APP: 2025/01/05 01:21:14 main.go:26: This is a log message, not a panic.
+APP: 2025/01/05 01:21:24 main.go:22: This is a log message.
+APP: 2025/01/05 01:21:24 main.go:23: Formatted log message: Hello, world!
+APP: 2025/01/05 01:21:24 main.go:26: This is a log message, not a panic.

@@ -3,72 +3,69 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"log"
 	"sync"
 	"time"
 
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 const (
-	dbConnectionString = "user:password@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn               = "host=localhost user=postgres password=yourpassword dbname=yourdb port=5432 sslmode=disable"
 	maxIdleConnections = 10
 	maxOpenConnections = 100
 )
 
 var (
-	// Database connection pool variable
 	db *gorm.DB
-
-	// WaitGroup for synchronization
 	wg sync.WaitGroup
 )
 
-// User struct representing the users table
 type User struct {
 	ID   uint   `gorm:"primaryKey"`
-	Name string `gorm:"not null"`
+	Name string `gorm:"size:255"`
 }
 
 func main() {
-	// Initialize the database connection pool
-	initDB()
+	// Initialize the database
+	if err := initDB(); err != nil {
+		log.Fatalf("Failed to initialize the database: %v", err)
+	}
 	defer closeDB()
 
-	// Simulate concurrent database operations
-	numOperations := 1000
+	// Perform transactions concurrently
+	numOperations := 100
 	wg.Add(numOperations)
-
 	for i := 0; i < numOperations; i++ {
 		go performTransaction()
 	}
-
 	wg.Wait()
 	fmt.Println("All transactions completed.")
 }
 
-func initDB() {
+func initDB() error {
 	var err error
-	// Use the `mysql` driver from `gorm.io/driver/mysql`
-	db, err = gorm.Open(mysql.Open(dbConnectionString), &gorm.Config{})
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		panic("Failed to connect to database: " + err.Error())
+		return fmt.Errorf("failed to connect to the database: %w", err)
 	}
 
-	// Set connection pool configurations
+	// Configure the connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
-		panic("Failed to retrieve generic DB object: " + err.Error())
+		return fmt.Errorf("failed to get database instance: %w", err)
 	}
 	sqlDB.SetMaxIdleConns(maxIdleConnections)
 	sqlDB.SetMaxOpenConns(maxOpenConnections)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-	// Create the "users" table if it doesn't exist
+	// Automatically migrate the User schema
 	if err := db.AutoMigrate(&User{}); err != nil {
-		panic("Failed to migrate database schema: " + err.Error())
+		return fmt.Errorf("failed to migrate schema: %w", err)
 	}
+
+	return nil
 }
 
 func closeDB() {
@@ -81,36 +78,23 @@ func closeDB() {
 func performTransaction() {
 	defer wg.Done()
 
-	// Create a context with a 30-second deadline
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Begin a new transaction
+	// Begin a transaction
 	tx := db.WithContext(ctx).Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			// Abort the transaction if it panics
-			tx.Rollback()
-			fmt.Println("Transaction rolled back due to panic:", r)
-		}
-	}()
-
-	// Simulate a database operation
-	name := fmt.Sprintf("User%d", rand.Intn(1000))
-	user := User{Name: name}
-
-	// Insert user into the database
-	if err := tx.Create(&user).Error; err != nil {
-		fmt.Println("Transaction failed:", err)
+	if err := tx.Create(&User{Name: "John Doe"}).Error; err != nil {
 		tx.Rollback()
+		log.Printf("Transaction failed: %v", err)
 		return
 	}
 
-	// Simulate a random delay
-	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		fmt.Println("Failed to commit transaction:", err)
+		log.Printf("Failed to commit transaction: %v", err)
+		return
 	}
+
+	log.Println("Transaction succeeded")
 }

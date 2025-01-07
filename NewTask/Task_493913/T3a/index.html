@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Input Validation</title>
+</head>
+<body>
+    <form id="inputForm">
+        <label for="email">Email:</label>
+        <input type="text" id="email" oninput="validateField()">
+        <div id="emailFeedback"></div>
+
+        <label for="userID">User ID:</label>
+        <input type="text" id="userID" oninput="validateField()">
+        <div id="userIDFeedback"></div>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    <script>
+        function validateField() {
+            const fields = document.querySelectorAll('#inputForm input');
+            fields.forEach(field => {
+                const feedbackElement = document.getElementById(`${field.id}Feedback`);
+                fetch(`/http://localhost:8080/validate?field=${field.id}&value=${field.value}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.valid) {
+                            feedbackElement.innerText = 'Valid';
+                            feedbackElement.style.color = 'green';
+                        } else {
+                            feedbackElement.innerText = 'Invalid';
+                            feedbackElement.style.color = 'red';
+                        }
+                    })
+                    .catch(error => {
+                        feedbackElement.innerText = 'Error checking validity';
+                        feedbackElement.style.color = 'red';
+                        console.error(error);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
