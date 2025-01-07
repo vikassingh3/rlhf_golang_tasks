@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -6,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -20,6 +18,7 @@ type User struct {
 
 func connectDB(connString string) (*sql.DB, error) {
 	// (Same code as before)
+	return nil, nil
 }
 
 func handleUserTransaction(db *sql.DB, c *gin.Context) {
