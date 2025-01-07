@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -10,76 +9,54 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type User struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-func connectDB(connString string) (*sql.DB, error) {
-	// (Same code as before)
-	return nil, nil
-}
-
-func handleUserTransaction(db *sql.DB, c *gin.Context) {
-	tx, err := db.Begin()
-	if err != nil {
-		log.Printf("Error starting transaction: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	defer func() {
-		if p := recover(); p != nil {
-			tx.Rollback()
-			log.Printf("Panic occurred during transaction: %v", p)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		}
-	}()
-
-	// Perform database operations within the transaction
-	userID := c.Param("id")
-	var user User
-	err = tx.QueryRow("SELECT id, name, email FROM users WHERE id = $1", userID).Scan(&user.ID, &user.Name, &user.Email)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	} else if err != nil {
-		tx.Rollback()
-		log.Printf("Query error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	// Additional database operations here
-
-	// Commit the transaction if no errors occurred
-	err = tx.Commit()
-	if err != nil {
-		log.Printf("Error committing transaction: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
-}
-
 func main() {
-	connString := "host=localhost dbname=mydatabase user=myuser password=mypassword sslmode=disable"
-	db, err := connectDB(connString)
+	connString := "host=localhost dbname=mydb user=myuser password=mypassword sslmode=disable"
+	db, err := sql.Open("postgres", connString)
 	if err != nil {
 		log.Fatalf("Error connecting to database: %v", err)
 	}
 	defer db.Close()
 
 	router := gin.Default()
-	router.GET("/user/:id", func(c *gin.Context) {
-		handleUserTransaction(db, c)
+	router.POST("/user", func(c *gin.Context) {
+		var user struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		}
+
+		if err := c.ShouldBindJSON(&user); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+			return
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction initialization failed"})
+			return
+		}
+
+		var userID int
+		err = tx.QueryRow("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id", user.Name, user.Email).Scan(&userID)
+		if err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert user"})
+			return
+		}
+
+		_, err = tx.Exec("INSERT INTO orders (user_id, amount, status) VALUES ($1, $2, $3)", userID, 100.0, "pending")
+		if err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
+			return
+		}
+
+		if err = tx.Commit(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction commit failed"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{"user_id": userID})
 	})
 
-	fmt.Println("Starting server on port 8080...")
-	if err := router.Run(":8080"); err != nil {
-		log.Fatalf("Error starting server: %v", err)
-	}
+	log.Fatal(router.Run(":8080"))
 }
- 
