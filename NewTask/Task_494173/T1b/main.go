@@ -1,48 +1,29 @@
-// main.go
-
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	"log"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
+	_ "github.com/lib/pq" // Import the PostgreSQL driver
 )
 
-// User model
-type User struct {
-	gorm.Model
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
 func main() {
-	// Initialize database
-	dsn := "user:password@tcp(localhost:3306)/db_name?charset=utf8mb4&parseTime=True&loc=Local"
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	// Connection string to the PostgreSQL database
+	connString := "host=localhost dbname=teastall password=root sslmode=disable"
+
+	// Open a connection to the database
+	db, err := sql.Open("postgres", connString)
 	if err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+		fmt.Printf("Error opening connection: %v\n", err)
+		return
+	}
+	defer db.Close() // Ensure the database connection is closed
+
+	// Ping the database to ensure the connection is working
+	err = db.Ping()
+	if err != nil {
+		fmt.Printf("Error pinging database: %v\n", err)
+		return
 	}
 
-	// Migrate User model
-	db.AutoMigrate(&User{})
-
-	// Create Gin router
-	router := gin.Default()
-
-	// Define routes
-	router.GET("/users", func(c *gin.Context) {
-		var users []User
-		db.Find(&users)
-		c.JSON(http.StatusOK, users)
-	})
-
-	// Start server
-	fmt.Println("User service running on port :8080")
-	if err := router.Run(":8080"); err != nil {
-		log.Fatalf("Error starting server: %v", err)
-	}
-}  
+	fmt.Println("Database connection established successfully!")
+}
