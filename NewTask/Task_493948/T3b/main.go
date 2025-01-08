@@ -1,58 +1,65 @@
-package main  
-    
-import (  
+package main
+
+import (
 	"fmt"
-	"log"
 	"math/rand"
-	"sync"
-	"time"
 )  
-
-// Given function
-func processTask(i int, wg *sync.WaitGroup, errCh chan<- error) {
-	defer wg.Done()
-	// Simulate some work
-	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	// Randomly introduce an error
-	if rand.Intn(10) == 0 {
-		errCh <- fmt.Errorf("task %d failed", i)
-		return
-	}
-	fmt.Println("Task", i, "completed successfully.")
+type AggregationResult struct {
+    Total int
+    Error error
 }
-
-func main() {  
-	// Number of tasks
-	const numTasks = 20
-	var wg sync.WaitGroup
-	errCh := make(chan error, numTasks)
-
-	// Adding tasks to the waitgroup
-	for i := 0; i < numTasks; i++ {
-		wg.Add(1)
-		go processTask(i, &wg, errCh)
-	}
-
-	// wait for all tasks to finish or error occurs
-	go func() {
-		wg.Wait()
-		close(errCh)
-	}()
-
-	// Handling errors
-	var firstErr error
-	for err := range errCh {
-		if firstErr == nil {
-			firstErr = err
-		}
-		log.Println("Error:", err)
-		// You can handle errors here, for example, by retrying the failed task or canceling all other tasks.
-	}
-
-	if firstErr != nil {
-		// Handle the overall failure if any error occurred.
-		fmt.Println("Failed due to error:", firstErr)
-	} else {
-		fmt.Println("All tasks completed successfully.")
-	}
+func aggregateData(data []int, result chan AggregationResult) {  
+    total := 0
+    for _, value := range data {
+        total += value
+    }
+    result <- AggregationResult{Total: total, Error: nil}
 }  
+func main() {  
+    numTasks := 3
+    dataSize := 1000000
+    data := fetchData(dataSize)
+    results := make(chan AggregationResult, numTasks)
+
+    // Start workers
+    for i := 0; i < numTasks; i++ {
+        chunkSize := len(data) / numTasks
+        start := i * chunkSize
+        end := (i + 1) * chunkSize
+        if end > len(data) {
+            end = len(data)
+        }
+        go aggregateData(data[start:end], results)
+    }
+
+    // Collect results
+    total := 0
+    var errors []error
+    for i := 0; i < numTasks; i++ {
+        result := <-results
+        if result.Error != nil {
+            errors = append(errors, result.Error)
+        } else {
+            total += result.Total
+        }
+    }
+
+    // Handle errors
+    if len(errors) > 0 {
+        fmt.Println("Errors occurred during aggregation:")
+        for _, err := range errors {
+            fmt.Println(err)
+        }
+        return
+    }
+
+    fmt.Println("Final Aggregated Result:", total)
+}  
+func fetchData(size int) []int {
+    data := make([]int, size)
+    for i := 0; i < size; i++ {
+        data[i] = rand.Intn(100)
+    }
+    return data
+}
+  
