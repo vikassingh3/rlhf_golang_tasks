@@ -1,65 +1,51 @@
 package main  
 import (  
-    "database/sql"
-    "fmt"
-    "log"
-    "net/http"
-    
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
-)
+    "database/sql"  
+    "fmt"  
+    _ "github.com/lib/pq" // Import the PostgreSQL driver  
+)  
+
+// Define custom error types for different types of database errors
+type DatabaseError struct {  
+    Message string  
+}  
+
+func (e *DatabaseError) Error() string {  
+    return fmt.Sprintf("Database Error: %s", e.Message)  
+}  
 
 func main() {  
-    // Database connection string
-    connString := "host=localhost dbname=postgres password=root sslmode=disable"
+    connString := "host=localhost dbname=postgres password=root sslmode=disable"  
+    db, err := sql.Open("postgres", connString)  
+    if err != nil {  
+        handleError(err)  
+        return  
+    }  
+    defer db.Close()  
 
-    // Open a database connection
-    db, err := sql.Open("postgres", connString)
-    if err != nil {
-        log.Fatalf("Error connecting to database: %v", err)
-    }
-    defer db.Close()
+    err = performSomeOperation(db)  
+    if err != nil {  
+        handleError(err)  
+        return  
+    }  
 
-    // Test the connection
-    if err = db.Ping(); err != nil {
-        log.Fatalf("Error pinging database: %v", err)
-    }
-    fmt.Println("Database connection established!")
-    
-    router := gin.Default()
-    
-    // Define a route to retrieve user by ID
-    router.GET("/user/:id", func(c *gin.Context) {
-        userID := c.Param("id")
-        var user User
-        // Query the database
-        row := db.QueryRow("SELECT id, name, email FROM users WHERE id = $1", userID)
-        err := row.Scan(&user.ID, &user.Name, &user.Email)
-        if err == sql.ErrNoRows {
-            // Handle case where user not found
-            c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-            return
-        } else if err != nil {
-            // Handle other query errors
-            log.Printf("Error querying database: %v", err)
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-            return
-        }
+    fmt.Println("Database operation successful!")  
+}  
 
-        // Return the user if found
-        c.JSON(http.StatusOK, user)
-    })
+func performSomeOperation(db *sql.DB) error {  
+    // Example query that might fail
+    _, err := db.Exec("INSERT INTO users (name) VALUES ($1)", "John Doe")  
+    if err != nil {  
+        return &DatabaseError{Message: "Error executing query: " + err.Error()}  
+    }  
+    return nil  
+}  
 
-    // Start the server
-    fmt.Println("Starting server on port 8080...")
-    if err := router.Run(":8080"); err != nil {
-        log.Fatalf("Error starting server: %v", err)
-    }
-}
-
-// User struct defines the user model
-type User struct {
-    ID   int    `json:"id"`
-    Name string `json:"name"`
-    Email string `json:"email"`
-}
+func handleError(err error) {  
+    if dbErr, ok := err.(*DatabaseError); ok {  
+        fmt.Printf("Error: %s\n", dbErr.Error())  
+        // You can handle database errors more specifically here based on the dbErr.Message
+    } else {  
+        fmt.Printf("Unexpected Error: %v\n", err)  
+    }  
+}  

@@ -8,7 +8,7 @@ import (
 
 func main() {
 	// Connection string to the PostgreSQL database
-	connString := "host=localhost dbname=mydatabase user=myuser password=mypassword sslmode=disable"
+	connString := "host=localhost dbname=teastall password=root sslmode=disable"
 
 	// Open a connection to the database
 	db, err := sql.Open("postgres", connString)
